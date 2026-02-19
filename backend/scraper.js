@@ -1,29 +1,10 @@
 const cheerio = require('cheerio');
-const axios = require('axios'); // Ajout d'axios pour appeler ScraperAPI
+const axios = require('axios');
 
 // --- COLLE TA CLÉ API ICI ---
 const SCRAPER_API_KEY = '42e313d5717759a7384dba4111963dc4';
 
-// 1. Récupère la VRAIE note Letterboxd directement sur la page du film (VIA LE PROXY)
-async function getLetterboxdRating(slug) {
-    try {
-        const targetUrl = `https://letterboxd.com/film/${slug}/`;
-        const proxyUrl = `http://api.scraperapi.com/?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(targetUrl)}`;
-
-        const response = await axios.get(proxyUrl);
-        const $ = cheerio.load(response.data);
-        const ratingStr = $('meta[name="twitter:data2"]').attr('content');
-        if (ratingStr) {
-            const match = ratingStr.match(/([\d.]+)/);
-            if (match) return parseFloat(match[1]);
-        }
-    } catch (e) {
-        console.log(`[Scraper] Impossible de récupérer la note pour ${slug}`);
-    }
-    return 0;
-}
-
-// 2. Récupère les affiches et métadonnées de base via Cinemeta (INCHANGÉ - Stremio ne bloque pas)
+// 1. Récupère les affiches et métadonnées de base via Cinemeta (INCHANGÉ)
 async function getStremioMeta(fullName) {
     try {
         const { gotScraping } = await import('got-scraping');
@@ -71,7 +52,7 @@ async function getStremioMeta(fullName) {
     return null;
 }
 
-// 3. Fonction principale de scraping (VIA LE PROXY)
+// 2. Fonction principale de scraping (Retour à la normale, propre et rapide)
 async function getWatchlist(username, sort = 'default') {
     let allRawMovies = [];
     let page = 1;
@@ -79,15 +60,12 @@ async function getWatchlist(username, sort = 'default') {
     const maxPages = 5;
 
     let sortPath = '';
-    let localSortNeeded = false;
 
+    // Retour à la normale : on laisse Letterboxd gérer le tri "rating"
     switch (sort) {
         case 'popular': sortPath = 'by/popular/'; break;
-        case 'rating':
-            sortPath = ''; // Plan B : On demande la liste par défaut
-            localSortNeeded = true;
-            break;
-        case 'release': sortPath = 'by/release/'; break; // URL corrigée
+        case 'rating': sortPath = 'by/rating/'; break;
+        case 'release': sortPath = 'by/release/'; break;
         case 'shortest': sortPath = 'by/shortest/'; break;
         default: sortPath = ''; break;
     }
@@ -103,16 +81,16 @@ async function getWatchlist(username, sort = 'default') {
             console.log(`[Scraper] Navigation vers (Proxy) : ${targetUrl}`);
 
             try {
-                // Utilisation de ScraperAPI pour contourner Cloudflare
+                // Utilisation de ScraperAPI
                 const proxyUrl = `http://api.scraperapi.com/?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(targetUrl)}`;
                 const response = await axios.get(proxyUrl);
 
                 const $ = cheerio.load(response.data);
 
-                // 🕵️ LE MOUCHARD EST DE RETOUR
+                // Mouchard de sécurité
                 const pageTitle = $('title').text().trim();
                 if (pageTitle.includes('Just a moment') || pageTitle.includes('Cloudflare') || pageTitle.includes('Un instant')) {
-                    console.log(`[Scraper] 🚨 BLOCAGE CLOUDFLARE DÉTECTÉ ! Titre : "${pageTitle}"`);
+                    console.log(`[Scraper] 🚨 BLOCAGE DÉTECTÉ ! Titre : "${pageTitle}"`);
                 } else if (pageTitle === 'Page not found') {
                     console.log(`[Scraper] ❌ ERREUR 404 : L'URL Letterboxd n'existe pas.`);
                 }
@@ -145,18 +123,12 @@ async function getWatchlist(username, sort = 'default') {
                     page++;
                 }
             } catch (err) {
-                // Gestion des erreurs Axios pour l'API
                 if (err.response && err.response.status === 404) break;
                 throw err;
             }
         }
 
-        // LOGS INTELLIGENTS
-        if (sort === 'rating') {
-            console.log(`[Scraper] Films extraits : ${allRawMovies.length}. Récupération des notes Letterboxd en cours...`);
-        } else {
-            console.log(`[Scraper] Films extraits : ${allRawMovies.length}. Récupération rapide des affiches Stremio...`);
-        }
+        console.log(`[Scraper] Films extraits : ${allRawMovies.length}. Récupération rapide des affiches Stremio...`);
 
         const movies = [];
         const batchSize = 10;
@@ -164,58 +136,17 @@ async function getWatchlist(username, sort = 'default') {
         for (let i = 0; i < allRawMovies.length; i += batchSize) {
             const batch = allRawMovies.slice(i, i + batchSize);
             const batchResults = await Promise.all(batch.map(async (raw) => {
+                const meta = await getStremioMeta(raw.name);
 
-                let meta;
-                let lbRating = 0;
-
-                // OPTIMISATION : Requête Letterboxd individuelle SEULEMENT pour le tri "rating"
-                if (sort === 'rating') {
-                    const [fetchedMeta, fetchedLbRating] = await Promise.all([
-                        getStremioMeta(raw.name),
-                        getLetterboxdRating(raw.slug)
-                    ]);
-                    meta = fetchedMeta;
-                    lbRating = fetchedLbRating;
-                } else {
-                    meta = await getStremioMeta(raw.name);
-                }
-
-                let finalMeta = meta ? { ...meta, type: meta.type || 'movie', posterShape: 'poster' } : {
+                return meta ? { ...meta, type: meta.type || 'movie', posterShape: 'poster' } : {
                     id: `lb:${raw.slug}`,
                     type: 'movie',
                     name: raw.name,
                     poster: 'https://s.ltrbxd.com/static/img/empty-poster-125-AiuBHVCI.png',
                     posterShape: 'poster'
                 };
-
-                // MODIFICATION DE LA DESCRIPTION SEULEMENT SI DEMANDÉ
-                if (sort === 'rating') {
-                    finalMeta.lbRating = lbRating;
-
-                    const starText = lbRating > 0 ? `⭐ Note Letterboxd : ${lbRating.toFixed(2)} / 5` : `⭐ Note Letterboxd : Non noté`;
-                    const originalDesc = finalMeta.description ? finalMeta.description.trim() : 'Aucune description disponible.';
-
-                    // La note bien séparée tout en bas
-                    finalMeta.description = `${originalDesc}\n\n──────────────\n${starText}`;
-
-                    if (lbRating > 0) {
-                        finalMeta.imdbRating = (lbRating * 2).toFixed(1).toString();
-                    }
-                }
-
-                return finalMeta;
             }));
             movies.push(...batchResults);
-        }
-
-        // PLAN B : TRI LOCAL
-        if (localSortNeeded && sort === 'rating') {
-            console.log(`[Scraper] 🧠 Application du "Plan B" : Tri local par note Letterboxd...`);
-            movies.sort((a, b) => {
-                const ratingA = a.lbRating || 0;
-                const ratingB = b.lbRating || 0;
-                return ratingB - ratingA;
-            });
         }
 
         console.log(`[Scraper] Terminé. ${movies.length} films prêts pour Stremio.`);
