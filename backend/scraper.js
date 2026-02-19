@@ -4,7 +4,55 @@ const axios = require('axios');
 // --- COLLE TA CLÉ API ICI ---
 const SCRAPER_API_KEY = '42e313d5717759a7384dba4111963dc4';
 
-// 1. Récupère les affiches et métadonnées de base via Cinemeta (INCHANGÉ)
+// ==========================================
+// 1. MOTEURS DE RECHERCHE (DIRECT VS PROXY)
+// ==========================================
+
+// Moteur 1 : Rapide & Gratuit (got-scraping)
+async function fetchPageDirect(url) {
+    const { gotScraping } = await import('got-scraping');
+    const response = await gotScraping.get(url, {
+        headerGeneratorOptions: {
+            browsers: [{ name: 'chrome', minVersion: 120 }],
+            devices: ['desktop'],
+            operatingSystems: ['windows', 'macos']
+        },
+        headers: {
+            'Upgrade-Insecure-Requests': '1',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7'
+        }
+    });
+
+    const $ = cheerio.load(response.body);
+    const pageTitle = $('title').text().trim();
+
+    if (pageTitle.includes('Just a moment') || pageTitle.includes('Cloudflare') || pageTitle.includes('Un instant')) {
+        throw new Error('CLOUDFLARE_BLOCK');
+    } else if (pageTitle === 'Page not found') {
+        throw new Error('NOT_FOUND');
+    }
+
+    return $;
+}
+
+// Moteur 2 : Robuste mais coûteux (ScraperAPI)
+async function fetchPageProxy(url) {
+    const proxyUrl = `http://api.scraperapi.com/?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(url)}`;
+    const response = await axios.get(proxyUrl);
+    const $ = cheerio.load(response.data);
+
+    if ($('title').text().trim() === 'Page not found') {
+        throw new Error('NOT_FOUND');
+    }
+
+    return $;
+}
+
+
+// ==========================================
+// 2. RÉCUPÉRATION METADONNÉES STREMIO
+// ==========================================
 async function getStremioMeta(fullName) {
     try {
         const { gotScraping } = await import('got-scraping');
@@ -52,16 +100,20 @@ async function getStremioMeta(fullName) {
     return null;
 }
 
-// 2. Fonction principale de scraping (Retour à la normale, propre et rapide)
+
+// ==========================================
+// 3. FONCTION PRINCIPALE AVEC FALLBACK
+// ==========================================
 async function getWatchlist(username, sort = 'default') {
     let allRawMovies = [];
     let page = 1;
     let hasMore = true;
     const maxPages = 5;
 
-    let sortPath = '';
+    // Indicateur pour savoir si on a été bloqué et qu'on doit passer sur le Proxy
+    let useProxy = false;
 
-    // Retour à la normale : on laisse Letterboxd gérer le tri "rating"
+    let sortPath = '';
     switch (sort) {
         case 'popular': sortPath = 'by/popular/'; break;
         case 'rating': sortPath = 'by/rating/'; break;
@@ -70,7 +122,7 @@ async function getWatchlist(username, sort = 'default') {
         default: sortPath = ''; break;
     }
 
-    console.log(`[Scraper] Lancement via ScraperAPI pour : ${username} | Tri : ${sort}`);
+    console.log(`[Scraper] Lancement du bot pour : ${username} | Tri : ${sort}`);
 
     try {
         while (hasMore && page <= maxPages) {
@@ -78,26 +130,30 @@ async function getWatchlist(username, sort = 'default') {
                 ? `https://letterboxd.com/${username}/watchlist/${sortPath}`
                 : `https://letterboxd.com/${username}/watchlist/${sortPath}page/${page}/`;
 
-            console.log(`[Scraper] Navigation vers (Proxy) : ${targetUrl}`);
+            let $;
 
             try {
-                // Utilisation de ScraperAPI
-                const proxyUrl = `http://api.scraperapi.com/?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(targetUrl)}`;
-                const response = await axios.get(proxyUrl);
-
-                const $ = cheerio.load(response.data);
-
-                // Mouchard de sécurité
-                const pageTitle = $('title').text().trim();
-                if (pageTitle.includes('Just a moment') || pageTitle.includes('Cloudflare') || pageTitle.includes('Un instant')) {
-                    console.log(`[Scraper] 🚨 BLOCAGE DÉTECTÉ ! Titre : "${pageTitle}"`);
-                } else if (pageTitle === 'Page not found') {
-                    console.log(`[Scraper] ❌ ERREUR 404 : L'URL Letterboxd n'existe pas.`);
+                if (!useProxy) {
+                    console.log(`[Scraper] Page ${page} ➔ Tentative Rapide (got-scraping)...`);
+                    try {
+                        $ = await fetchPageDirect(targetUrl);
+                    } catch (err) {
+                        if (err.message === 'CLOUDFLARE_BLOCK') {
+                            console.log(`[Scraper] 🚨 BLOCAGE CLOUDFLARE ! Activation immédiate de ScraperAPI...`);
+                            useProxy = true; // On mémorise le blocage pour les pages suivantes
+                            $ = await fetchPageProxy(targetUrl); // On retente la même page avec le proxy
+                        } else {
+                            throw err; // C'est une erreur 404, on passe au catch parent
+                        }
+                    }
+                } else {
+                    console.log(`[Scraper] Page ${page} ➔ Requête via Proxy (ScraperAPI)...`);
+                    $ = await fetchPageProxy(targetUrl);
                 }
 
                 const posters = $('[data-film-slug], [data-item-slug], [data-target-link], .film-poster');
 
-                console.log(`[Scraper] Éléments trouvés sur la page ${page} : ${posters.length}`);
+                console.log(`[Scraper] ✔️ Succès : ${posters.length} éléments trouvés.`);
 
                 if (posters.length === 0) {
                     hasMore = false;
@@ -123,12 +179,15 @@ async function getWatchlist(username, sort = 'default') {
                     page++;
                 }
             } catch (err) {
-                if (err.response && err.response.status === 404) break;
+                if (err.message === 'NOT_FOUND' || (err.response && err.response.status === 404)) {
+                    console.log(`[Scraper] Fin de la liste atteinte (URL introuvable).`);
+                    break;
+                }
                 throw err;
             }
         }
 
-        console.log(`[Scraper] Films extraits : ${allRawMovies.length}. Récupération rapide des affiches Stremio...`);
+        console.log(`[Scraper] Films extraits : ${allRawMovies.length}. Conversion vers Stremio...`);
 
         const movies = [];
         const batchSize = 10;
@@ -153,7 +212,7 @@ async function getWatchlist(username, sort = 'default') {
         return movies;
 
     } catch (error) {
-        console.error(`[Erreur ScraperAPI] ${error.message}`);
+        console.error(`[Scraper] Erreur fatale : ${error.message}`);
         return [];
     }
 }
