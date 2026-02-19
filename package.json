@@ -7,10 +7,10 @@
     "backend"
   ],
   "scripts": {
+    "build": "npm run build -w frontend",
+    "start": "node backend/server.js",
     "dev:frontend": "npm run dev -w frontend",
-    "dev:backend": "nodemon backend/server.js",
-    "build:frontend": "npm run build -w frontend",
-    "start": "node backend/server.js"
+    "dev:backend": "nodemon backend/server.js"
   },
   "dependencies": {
     "axios": "^1.13.5",
