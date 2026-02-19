@@ -19,136 +19,82 @@ async function getStremioMeta(fullName) {
 
         if (allMetas.length > 0) {
             let bestMatch = null;
-
             if (targetYear) {
                 bestMatch = allMetas.find(m => {
                     const metaYear = parseInt(m.year || (m.releaseInfo ? m.releaseInfo.substring(0, 4) : '0'), 10);
                     return m.name.toLowerCase() === cleanTitle && Math.abs(metaYear - targetYear) <= 1;
                 });
-
-                if (!bestMatch) {
-                    bestMatch = allMetas.find(m => {
-                        const metaYear = parseInt(m.year || (m.releaseInfo ? m.releaseInfo.substring(0, 4) : '0'), 10);
-                        return Math.abs(metaYear - targetYear) <= 1;
-                    });
-                }
             }
-
-            if (!bestMatch) {
-                bestMatch = allMetas.find(m => m.name.toLowerCase() === cleanTitle);
-            }
-
-            if (!bestMatch) {
-                bestMatch = allMetas[0];
-            }
+            if (!bestMatch) bestMatch = allMetas.find(m => m.name.toLowerCase() === cleanTitle) || allMetas[0];
 
             if (bestMatch && bestMatch.id) {
                 try {
-                    const detailUrl = `https://v3-cinemeta.strem.io/meta/${bestMatch.type}/${bestMatch.id}.json`;
-                    const detailRes = await axios.get(detailUrl);
-                    if (detailRes.data && detailRes.data.meta) {
-                        return detailRes.data.meta;
-                    }
-                } catch (e) {
-                    return bestMatch;
-                }
+                    const detailRes = await axios.get(`https://v3-cinemeta.strem.io/meta/${bestMatch.type}/${bestMatch.id}.json`);
+                    return detailRes.data.meta || bestMatch;
+                } catch (e) { return bestMatch; }
             }
             return bestMatch;
         }
-    } catch (e) {
-        return null;
-    }
+    } catch (e) { return null; }
     return null;
 }
 
 async function getWatchlist(username, sort = 'default') {
     let allRawMovies = [];
-    let page = 1;
-    let hasMore = true;
-    const maxPages = 5;
-
-    // FORCER LES MINUSCULES POUR ÉVITER LES REDIRECTIONS BLOQUÉES
     const cleanUsername = username.toLowerCase().trim();
-
-    console.log(`[Scraper] Récupération de la watchlist de ${cleanUsername} (Tri: ${sort})`);
 
     let baseUrl = `https://letterboxd.com/${cleanUsername}/watchlist/`;
     if (sort === 'popular') baseUrl += 'by/popular/';
     if (sort === 'rating') baseUrl += 'by/rating/';
-    if (sort === 'release') baseUrl += 'by/release/'; // L'ERREUR ÉTAIT ICI : 'release' au lieu de 'release-newest'
+    if (sort === 'release') baseUrl += 'by/release/';
     if (sort === 'shortest') baseUrl += 'by/shortest/';
 
+    console.log(`[DEBUG] Tentative de scraping sur : ${baseUrl}`);
+
     try {
-        while (hasMore && page <= maxPages) {
-            const pageUrl = page === 1 ? baseUrl : `${baseUrl}page/${page}/`;
+        const { data, status } = await axios.get(baseUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Referer': 'https://letterboxd.com/',
+                'DNT': '1'
+            },
+            timeout: 10000
+        });
 
-            console.log(`[Scraper] Analyse de ${pageUrl}...`);
+        console.log(`[DEBUG] Statut HTTP : ${status}`);
 
-            try {
-                const { data } = await axios.get(pageUrl, {
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                        'Accept-Language': 'fr,fr-FR;q=0.8,en-US;q=0.5,en;q=0.3'
-                    }
-                });
+        const $ = cheerio.load(data);
+        const posters = $('.film-poster');
 
-                const $ = cheerio.load(data);
-                const posters = $('.film-poster');
+        console.log(`[DEBUG] Nombre de posters trouvés sur la page : ${posters.length}`);
 
-                if (posters.length === 0) {
-                    hasMore = false;
-                } else {
-                    posters.each((i, element) => {
-                        const slug = $(element).attr('data-film-slug');
-                        const name = $(element).find('img').attr('alt') || (slug ? slug.replace(/-/g, ' ') : null);
-                        if (slug && name) allRawMovies.push({ slug, name });
-                    });
-                    page++;
-                }
-            } catch (err) {
-                console.error(`[Erreur HTTP] Échec sur ${pageUrl} :`, err.message);
-                hasMore = false;
-            }
+        if (posters.length === 0) {
+            // Si on ne trouve rien, on affiche un bout du HTML pour comprendre
+            console.log(`[DEBUG] HTML reçu (500 premiers caractères) : ${data.substring(0, 500)}`);
         }
 
-        console.log(`[Scraper] ${allRawMovies.length} films trouvés.`);
-        console.log(`[Cinemeta] Synchronisation des métadonnées en cours...`);
+        posters.each((i, element) => {
+            const slug = $(element).attr('data-film-slug');
+            const name = $(element).find('img').attr('alt') || (slug ? slug.replace(/-/g, ' ') : null);
+            if (slug && name) allRawMovies.push({ slug, name });
+        });
 
-        const movies = [];
-        const batchSize = 10;
-
-        for (let i = 0; i < allRawMovies.length; i += batchSize) {
-            const batch = allRawMovies.slice(i, i + batchSize);
-            const batchResults = await Promise.all(batch.map(async (raw) => {
-                const meta = await getStremioMeta(raw.name);
-
-                if (meta) {
-                    return {
-                        ...meta,
-                        type: meta.type || 'movie',
-                        posterShape: 'poster'
-                    };
-                }
-
-                return {
-                    id: `lb:${raw.slug}`,
-                    type: 'movie',
-                    name: raw.name,
-                    poster: 'https://s.ltrbxd.com/static/img/empty-poster-125-AiuBHVCI.png',
-                    posterShape: 'poster',
-                    description: 'Information non trouvée sur Cinemeta'
-                };
-            }));
-            movies.push(...batchResults);
-        }
-
-        console.log(`[Cinemeta] Synchronisation terminée (${movies.length} films).`);
+        // Conversion Cinemeta (on limite à 20 pour tester vite)
+        const movies = await Promise.all(allRawMovies.slice(0, 20).map(async (raw) => {
+            const meta = await getStremioMeta(raw.name);
+            return meta ? { ...meta, type: meta.type || 'movie' } : { id: `lb:${raw.slug}`, type: 'movie', name: raw.name, poster: 'https://s.ltrbxd.com/static/img/empty-poster-125-AiuBHVCI.png' };
+        }));
 
         return movies;
 
     } catch (error) {
-        console.error(`[Erreur] Échec du scraping : ${error.message}`);
+        if (error.response) {
+            console.error(`[ERREUR] Letterboxd a répondu ${error.response.status}. C'est probablement Cloudflare qui bloque.`);
+        } else {
+            console.error(`[ERREUR] Erreur de connexion : ${error.message}`);
+        }
         return [];
     }
 }
