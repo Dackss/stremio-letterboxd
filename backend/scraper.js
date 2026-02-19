@@ -1,12 +1,6 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
-const puppeteer = require('puppeteer-extra');
-const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 
-// Ajout du plugin Stealth pour contourner Cloudflare
-puppeteer.use(StealthPlugin());
-
-// ... (Garde ta fonction getStremioMeta intacte ici, car l'API cinemeta d'axios fonctionne toujours)
 async function getStremioMeta(fullName) {
     try {
         const cleanTitle = fullName.replace(/\s\(\d{4}\)$/, '').trim().toLowerCase();
@@ -73,38 +67,33 @@ async function getWatchlist(username, sort = 'default') {
     let hasMore = true;
     const maxPages = 5;
 
+    // FORCER LES MINUSCULES POUR ÉVITER LES REDIRECTIONS BLOQUÉES
     const cleanUsername = username.toLowerCase().trim();
-    console.log(`[Scraper] Récupération de la watchlist de ${cleanUsername} (Tri: ${sort}) avec Puppeteer`);
+
+    console.log(`[Scraper] Récupération de la watchlist de ${cleanUsername} (Tri: ${sort})`);
 
     let baseUrl = `https://letterboxd.com/${cleanUsername}/watchlist/`;
     if (sort === 'popular') baseUrl += 'by/popular/';
     if (sort === 'rating') baseUrl += 'by/rating/';
-    if (sort === 'release') baseUrl += 'by/release-newest/';
+    if (sort === 'release') baseUrl += 'by/release/'; // L'ERREUR ÉTAIT ICI : 'release' au lieu de 'release-newest'
     if (sort === 'shortest') baseUrl += 'by/shortest/';
 
-    // Lancement du navigateur Puppeteer
-    const browser = await puppeteer.launch({
-        headless: "new",
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
-
     try {
-        const pageBrowser = await browser.newPage();
-
         while (hasMore && page <= maxPages) {
             const pageUrl = page === 1 ? baseUrl : `${baseUrl}page/${page}/`;
+
             console.log(`[Scraper] Analyse de ${pageUrl}...`);
 
             try {
-                // On navigue vers la page et on attend qu'elle soit chargée
-                await pageBrowser.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                const { data } = await axios.get(pageUrl, {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                        'Accept-Language': 'fr,fr-FR;q=0.8,en-US;q=0.5,en;q=0.3'
+                    }
+                });
 
-                // Petit délai aléatoire pour simuler un humain et laisser Cloudflare valider
-                await pageBrowser.waitForTimeout(2000 + Math.random() * 2000);
-
-                // Récupération du HTML généré
-                const content = await pageBrowser.content();
-                const $ = cheerio.load(content);
+                const $ = cheerio.load(data);
                 const posters = $('.film-poster');
 
                 if (posters.length === 0) {
@@ -118,13 +107,10 @@ async function getWatchlist(username, sort = 'default') {
                     page++;
                 }
             } catch (err) {
-                console.error(`[Erreur Puppeteer] Échec sur ${pageUrl} :`, err.message);
+                console.error(`[Erreur HTTP] Échec sur ${pageUrl} :`, err.message);
                 hasMore = false;
             }
         }
-
-        // Fermeture du navigateur
-        await browser.close();
 
         console.log(`[Scraper] ${allRawMovies.length} films trouvés.`);
         console.log(`[Cinemeta] Synchronisation des métadonnées en cours...`);
@@ -158,11 +144,11 @@ async function getWatchlist(username, sort = 'default') {
         }
 
         console.log(`[Cinemeta] Synchronisation terminée (${movies.length} films).`);
+
         return movies;
 
     } catch (error) {
-        console.error(`[Erreur globale] Échec du scraping : ${error.message}`);
-        await browser.close();
+        console.error(`[Erreur] Échec du scraping : ${error.message}`);
         return [];
     }
 }
