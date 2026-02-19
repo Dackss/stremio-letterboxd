@@ -83,9 +83,24 @@ async function getWatchlist(username, sort = 'default') {
 
             try {
                 // Requête réseau furtive
-                const response = await gotScraping.get(pageUrl);
-                const $ = cheerio.load(response.body);
+                const refererUrl = page === 1
+                    ? `https://letterboxd.com/${username}/watchlist/`
+                    : `https://letterboxd.com/${username}/watchlist/${sortPath}page/${page - 1}/`;
 
+                const response = await gotScraping.get(pageUrl, {
+                    headerGeneratorOptions: {
+                        browsers: [{ name: 'chrome', minVersion: 120 }],
+                        devices: ['desktop'],
+                        operatingSystems: ['windows', 'macos']
+                    },
+                    headers: {
+                        'Referer': refererUrl,
+                        'Upgrade-Insecure-Requests': '1',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                        'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7'
+                    }
+                });
+                const $ = cheerio.load(response.body);
                 // --- 🕵️ MOUCHARD AJOUTÉ ICI ---
                 const pageTitle = $('title').text();
                 console.log(`[Scraper] 🕵️ Titre lu par le bot : "${pageTitle.trim()}"`);
