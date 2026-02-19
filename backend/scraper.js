@@ -1,5 +1,9 @@
 const axios = require('axios');
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+
+// Activation du mode furtif pour contourner Cloudflare et les blocages anti-bots
+puppeteer.use(StealthPlugin());
 
 // Fonction intacte : récupère les détails du film sur les serveurs Stremio/Cinemeta
 async function getStremioMeta(fullName) {
@@ -50,7 +54,7 @@ async function getStremioMeta(fullName) {
     return null;
 }
 
-// Nouvelle fonction de scraping propulsée par Puppeteer
+// Nouvelle fonction de scraping propulsée par Puppeteer (Furtif)
 async function getWatchlist(username, sort = 'default') {
     let allRawMovies = [];
     let page = 1;
@@ -61,12 +65,12 @@ async function getWatchlist(username, sort = 'default') {
     switch (sort) {
         case 'popular': sortPath = 'by/popular/'; break;
         case 'rating': sortPath = 'by/rating/'; break;
-        case 'release': sortPath = 'by/release/'; break;
+        case 'release': sortPath = 'by/release-newest/'; break;
         case 'shortest': sortPath = 'by/shortest/'; break;
         default: sortPath = ''; break;
     }
 
-    console.log(`[Scraper] Lancement de Puppeteer pour : ${username} | Tri : ${sort}`);
+    console.log(`[Scraper] Lancement de Puppeteer (Stealth) pour : ${username} | Tri : ${sort}`);
 
     const browser = await puppeteer.launch({
         headless: "new",
@@ -89,6 +93,13 @@ async function getWatchlist(username, sort = 'default') {
             if (response.status() === 404) {
                 console.log(`[Scraper] Fin atteinte (Erreur 404) à la page ${page}.`);
                 break;
+            }
+
+            // AJOUT : On attend jusqu'à 3 secondes que Cloudflare disparaisse et que les affiches chargent
+            try {
+                await pageBrowser.waitForSelector('[data-film-slug], [data-item-slug], .film-poster', { timeout: 3000 });
+            } catch (e) {
+                console.log("[Scraper] Aucun poster trouvé après 3s d'attente (Fin de liste ou blocage persistant).");
             }
 
             const moviesOnPage = await pageBrowser.evaluate(() => {

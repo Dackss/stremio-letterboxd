@@ -33,3 +33,4 @@ pids
 # Build (si on compile plus tard)
 dist/
 build/
+/.cache/
