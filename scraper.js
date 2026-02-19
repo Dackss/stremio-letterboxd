@@ -1,6 +1,5 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
-const fs = require('fs');
 
 async function getStremioMeta(fullName) {
     try {
@@ -16,39 +15,33 @@ async function getStremioMeta(fullName) {
             axios.get(seriesSearchUrl).catch(() => ({ data: { metas: [] } }))
         ]);
 
-        // On met les films en premier, car c'est Letterboxd !
         const allMetas = [...(movieRes.data.metas || []), ...(seriesRes.data.metas || [])];
 
         if (allMetas.length > 0) {
             let bestMatch = null;
 
             if (targetYear) {
-                // 1. Le match PARFAIT (Titre exact + Année proche)
                 bestMatch = allMetas.find(m => {
-                    const metaYear = parseInt(m.year || (m.releaseInfo ? m.releaseInfo.substring(0, 4) : "0"), 10);
+                    const metaYear = parseInt(m.year || (m.releaseInfo ? m.releaseInfo.substring(0, 4) : '0'), 10);
                     return m.name.toLowerCase() === cleanTitle && Math.abs(metaYear - targetYear) <= 1;
                 });
 
-                // 2. Le match DE TRADUCTION (Titre différent ex: "Teorema", mais la bonne année)
                 if (!bestMatch) {
                     bestMatch = allMetas.find(m => {
-                        const metaYear = parseInt(m.year || (m.releaseInfo ? m.releaseInfo.substring(0, 4) : "0"), 10);
+                        const metaYear = parseInt(m.year || (m.releaseInfo ? m.releaseInfo.substring(0, 4) : '0'), 10);
                         return Math.abs(metaYear - targetYear) <= 1;
                     });
                 }
             }
 
-            // 3. Si l'année est introuvable, on se rabat sur le titre exact
             if (!bestMatch) {
                 bestMatch = allMetas.find(m => m.name.toLowerCase() === cleanTitle);
             }
 
-            // 4. Si vraiment rien ne marche, on prend le premier résultat
             if (!bestMatch) {
                 bestMatch = allMetas[0];
             }
 
-            // 5. Récupération de l'affiche HD et du vrai résumé
             if (bestMatch && bestMatch.id) {
                 try {
                     const detailUrl = `https://v3-cinemeta.strem.io/meta/${bestMatch.type}/${bestMatch.id}.json`;
@@ -57,13 +50,13 @@ async function getStremioMeta(fullName) {
                         return detailRes.data.meta;
                     }
                 } catch (e) {
-                    // Ignorer et renvoyer la miniature par défaut
+                    return bestMatch;
                 }
             }
             return bestMatch;
         }
     } catch (e) {
-        // Ignorer les erreurs
+        return null;
     }
     return null;
 }
@@ -72,9 +65,9 @@ async function getWatchlist(username) {
     let allRawMovies = [];
     let page = 1;
     let hasMore = true;
-    const maxPages = 5; // Limite de sécurité (env. 140 films max)
+    const maxPages = 5;
 
-    console.log(`\n🚀 Lancement du scraping pour ${username}...`);
+    console.log(`[Scraper] Récupération de la watchlist pour l'utilisateur : ${username}`);
 
     try {
         while (hasMore && page <= maxPages) {
@@ -82,7 +75,7 @@ async function getWatchlist(username) {
                 ? `https://letterboxd.com/${username}/watchlist/`
                 : `https://letterboxd.com/${username}/watchlist/page/${page}/`;
 
-            console.log(`📄 Lecture de la page ${page}...`);
+            console.log(`[Scraper] Analyse de la page ${page}...`);
 
             try {
                 const { data } = await axios.get(pageUrl, {
@@ -107,8 +100,8 @@ async function getWatchlist(username) {
             }
         }
 
-        console.log(`🎬 ${allRawMovies.length} éléments trouvés sur Letterboxd.`);
-        console.log(`⏳ Synchronisation avec Stremio en cours...`);
+        console.log(`[Scraper] ${allRawMovies.length} films trouvés sur Letterboxd.`);
+        console.log(`[Cinemeta] Synchronisation des métadonnées en cours...`);
 
         const movies = [];
         const batchSize = 10;
@@ -120,12 +113,9 @@ async function getWatchlist(username) {
 
                 if (meta) {
                     return {
-                        id: meta.id,
-                        type: meta.type || 'movie', // IMPORTANT : On assigne 'series' si c'est une série
-                        name: meta.name,
-                        poster: meta.poster,
-                        background: meta.background,
-                        description: meta.description || `Sortie : ${meta.year || 'inconnue'}`
+                        ...meta,
+                        type: meta.type || 'movie',
+                        posterShape: 'poster'
                     };
                 }
 
@@ -133,20 +123,20 @@ async function getWatchlist(username) {
                     id: `lb:${raw.slug}`,
                     type: 'movie',
                     name: raw.name,
-                    poster: "https://s.ltrbxd.com/static/img/empty-poster-125-AiuBHVCI.png",
-                    description: "⚠️ Introuvable sur Cinemeta"
+                    poster: 'https://s.ltrbxd.com/static/img/empty-poster-125-AiuBHVCI.png',
+                    posterShape: 'poster',
+                    description: 'Information non trouvée sur Cinemeta'
                 };
             }));
             movies.push(...batchResults);
         }
 
-        fs.writeFileSync('movies.json', JSON.stringify(movies, null, 2));
-        console.log(`✅ ${movies.length} éléments traités et envoyés à Stremio !`);
+        console.log(`[Cinemeta] Synchronisation terminée (${movies.length} films).`);
 
         return movies;
 
     } catch (error) {
-        console.error(`❌ Erreur globale : ${error.message}`);
+        console.error(`[Erreur] Échec du scraping : ${error.message}`);
         return [];
     }
 }
