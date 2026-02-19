@@ -7,8 +7,9 @@
     "backend"
   ],
   "scripts": {
-    "build": "npm run build -w frontend",
+    "build": "npm run build -w frontend && npx puppeteer browsers install chrome",
     "build:frontend": "npm run build -w frontend",
+    "build:puppeteer": "npx puppeteer browsers install chrome",
     "start": "node backend/server.js",
     "dev:frontend": "npm run dev -w frontend",
     "dev:backend": "nodemon backend/server.js"
