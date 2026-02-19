@@ -1,31 +1,29 @@
 const cheerio = require('cheerio');
+const axios = require('axios'); // Ajout d'axios pour appeler ScraperAPI
 
-// 1. Récupère la VRAIE note Letterboxd directement sur la page du film
+// --- COLLE TA CLÉ API ICI ---
+const SCRAPER_API_KEY = '42e313d5717759a7384dba4111963dc4';
+
+// 1. Récupère la VRAIE note Letterboxd directement sur la page du film (VIA LE PROXY)
 async function getLetterboxdRating(slug) {
     try {
-        const { gotScraping } = await import('got-scraping');
-        const url = `https://letterboxd.com/film/${slug}/`;
+        const targetUrl = `https://letterboxd.com/film/${slug}/`;
+        const proxyUrl = `http://api.scraperapi.com/?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(targetUrl)}`;
 
-        // On met le bouclier furtif ici aussi au cas où
-        const response = await gotScraping.get(url, {
-            headerGeneratorOptions: {
-                browsers: [{ name: 'chrome', minVersion: 120 }],
-                devices: ['desktop'],
-                operatingSystems: ['windows', 'macos']
-            }
-        });
-
-        const $ = cheerio.load(response.body);
+        const response = await axios.get(proxyUrl);
+        const $ = cheerio.load(response.data);
         const ratingStr = $('meta[name="twitter:data2"]').attr('content');
         if (ratingStr) {
             const match = ratingStr.match(/([\d.]+)/);
             if (match) return parseFloat(match[1]);
         }
-    } catch (e) { }
+    } catch (e) {
+        console.log(`[Scraper] Impossible de récupérer la note pour ${slug}`);
+    }
     return 0;
 }
 
-// 2. Récupère les affiches et métadonnées de base via Cinemeta
+// 2. Récupère les affiches et métadonnées de base via Cinemeta (INCHANGÉ - Stremio ne bloque pas)
 async function getStremioMeta(fullName) {
     try {
         const { gotScraping } = await import('got-scraping');
@@ -73,7 +71,7 @@ async function getStremioMeta(fullName) {
     return null;
 }
 
-// 3. Fonction principale de scraping
+// 3. Fonction principale de scraping (VIA LE PROXY)
 async function getWatchlist(username, sort = 'default') {
     let allRawMovies = [];
     let page = 1;
@@ -94,34 +92,22 @@ async function getWatchlist(username, sort = 'default') {
         default: sortPath = ''; break;
     }
 
-    console.log(`[Scraper] Lancement de got-scraping pour : ${username} | Tri : ${sort}`);
+    console.log(`[Scraper] Lancement via ScraperAPI pour : ${username} | Tri : ${sort}`);
 
     try {
-        const { gotScraping } = await import('got-scraping');
-
         while (hasMore && page <= maxPages) {
-            const pageUrl = page === 1
+            const targetUrl = page === 1
                 ? `https://letterboxd.com/${username}/watchlist/${sortPath}`
                 : `https://letterboxd.com/${username}/watchlist/${sortPath}page/${page}/`;
 
-            console.log(`[Scraper] Navigation vers : ${pageUrl}`);
+            console.log(`[Scraper] Navigation vers (Proxy) : ${targetUrl}`);
 
             try {
-                // 🛡️ BOUCLIER FURTIF ANTI-CLOUDFLARE
-                const response = await gotScraping.get(pageUrl, {
-                    headerGeneratorOptions: {
-                        browsers: [{ name: 'chrome', minVersion: 120 }],
-                        devices: ['desktop'],
-                        operatingSystems: ['windows', 'macos']
-                    },
-                    headers: {
-                        'Upgrade-Insecure-Requests': '1',
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                        'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7'
-                    }
-                });
+                // Utilisation de ScraperAPI pour contourner Cloudflare
+                const proxyUrl = `http://api.scraperapi.com/?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(targetUrl)}`;
+                const response = await axios.get(proxyUrl);
 
-                const $ = cheerio.load(response.body);
+                const $ = cheerio.load(response.data);
 
                 // 🕵️ LE MOUCHARD EST DE RETOUR
                 const pageTitle = $('title').text().trim();
@@ -159,7 +145,8 @@ async function getWatchlist(username, sort = 'default') {
                     page++;
                 }
             } catch (err) {
-                if (err.response && err.response.statusCode === 404) break;
+                // Gestion des erreurs Axios pour l'API
+                if (err.response && err.response.status === 404) break;
                 throw err;
             }
         }
@@ -235,7 +222,7 @@ async function getWatchlist(username, sort = 'default') {
         return movies;
 
     } catch (error) {
-        console.error(`[Erreur got-scraping] ${error.message}`);
+        console.error(`[Erreur ScraperAPI] ${error.message}`);
         return [];
     }
 }
