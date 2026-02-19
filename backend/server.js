@@ -1,3 +1,4 @@
+const path = require('path');
 const express = require('express');
 const { addonBuilder, getRouter } = require('stremio-addon-sdk');
 const { getWatchlist } = require('./scraper');
