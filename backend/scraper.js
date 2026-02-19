@@ -8,15 +8,12 @@ async function getLetterboxdRating(slug) {
         const response = await gotScraping.get(url);
         const $ = cheerio.load(response.body);
 
-        // Letterboxd cache la note globale dans les balises meta de Twitter (ex: "4.23 out of 5")
         const ratingStr = $('meta[name="twitter:data2"]').attr('content');
         if (ratingStr) {
             const match = ratingStr.match(/([\d.]+)/);
-            if (match) return parseFloat(match[1]); // Renvoie 4.23
+            if (match) return parseFloat(match[1]);
         }
-    } catch (e) {
-        // En cas d'erreur (ex: film introuvable), on renvoie 0
-    }
+    } catch (e) { }
     return 0;
 }
 
@@ -59,9 +56,7 @@ async function getStremioMeta(fullName) {
                 try {
                     const detailUrl = `https://v3-cinemeta.strem.io/meta/${bestMatch.type}/${bestMatch.id}.json`;
                     const detailRes = await gotScraping.get(detailUrl).json();
-                    if (detailRes && detailRes.meta) {
-                        return detailRes.meta;
-                    }
+                    if (detailRes && detailRes.meta) return detailRes.meta;
                 } catch (e) { return bestMatch; }
             }
             return bestMatch;
@@ -78,16 +73,16 @@ async function getWatchlist(username, sort = 'default') {
     const maxPages = 5;
 
     let sortPath = '';
-    let localSortNeeded = false; // Activation du Plan B
+    let localSortNeeded = false;
 
-    // On trompe Cloudflare en ne demandant que des pages "propres"
+    // CORRECTION ICI : "by/release/" au lieu de "by/release-newest/"
     switch (sort) {
         case 'popular': sortPath = 'by/popular/'; break;
         case 'rating':
-            sortPath = ''; // TRICHE : On demande la page par défaut
+            sortPath = '';
             localSortNeeded = true;
             break;
-        case 'release': sortPath = 'by/release-newest/'; break;
+        case 'release': sortPath = 'by/release/'; break;
         case 'shortest': sortPath = 'by/shortest/'; break;
         default: sortPath = ''; break;
     }
@@ -140,7 +135,13 @@ async function getWatchlist(username, sort = 'default') {
             }
         }
 
-        console.log(`[Scraper] Films extraits : ${allRawMovies.length}. Récupération des notes Letterboxd en cours...`);
+        // AFFICHAGE DES LOGS INTELLIGENT
+        if (sort === 'rating') {
+            console.log(`[Scraper] Films extraits : ${allRawMovies.length}. Récupération des notes Letterboxd en cours (ça peut prendre du temps)...`);
+        } else {
+            console.log(`[Scraper] Films extraits : ${allRawMovies.length}. Récupération rapide des affiches Stremio...`);
+        }
+
         const movies = [];
         const batchSize = 10;
 
@@ -148,11 +149,20 @@ async function getWatchlist(username, sort = 'default') {
             const batch = allRawMovies.slice(i, i + batchSize);
             const batchResults = await Promise.all(batch.map(async (raw) => {
 
-                // On récupère les deux sources en parallèle pour aller plus vite
-                const [meta, lbRating] = await Promise.all([
-                    getStremioMeta(raw.name),
-                    getLetterboxdRating(raw.slug)
-                ]);
+                let meta;
+                let lbRating = 0;
+
+                // OPTIMISATION : On ne va lire la note Letterboxd QUE si l'utilisateur demande le tri "rating"
+                if (sort === 'rating') {
+                    const [fetchedMeta, fetchedLbRating] = await Promise.all([
+                        getStremioMeta(raw.name),
+                        getLetterboxdRating(raw.slug)
+                    ]);
+                    meta = fetchedMeta;
+                    lbRating = fetchedLbRating;
+                } else {
+                    meta = await getStremioMeta(raw.name);
+                }
 
                 let finalMeta = meta ? { ...meta, type: meta.type || 'movie', posterShape: 'poster' } : {
                     id: `lb:${raw.slug}`,
@@ -162,19 +172,18 @@ async function getWatchlist(username, sort = 'default') {
                     posterShape: 'poster'
                 };
 
-                // SAUVEGARDE POUR LE TRI
-                finalMeta.lbRating = lbRating;
+                // AJOUT DE LA NOTE SEULEMENT SI DEMANDÉ
+                if (sort === 'rating') {
+                    finalMeta.lbRating = lbRating;
 
-                // MODIFICATION DE LA DESCRIPTION DANS STREMIO (Note en bas)
-                const starText = lbRating > 0 ? `⭐ Note Letterboxd : ${lbRating.toFixed(2)} / 5` : `⭐ Note Letterboxd : Non noté`;
-                const originalDesc = finalMeta.description ? finalMeta.description.trim() : 'Aucune description disponible.';
+                    // La note bien séparée tout en bas
+                    const starText = lbRating > 0 ? `⭐ Note Letterboxd : ${lbRating.toFixed(2)} / 5` : `⭐ Note Letterboxd : Non noté`;
+                    const originalDesc = finalMeta.description ? finalMeta.description.trim() : 'Aucune description disponible.';
+                    finalMeta.description = `${originalDesc}\n\n──────────────\n${starText}`;
 
-                // On place la note tout en bas, séparée par une ligne visuelle
-                finalMeta.description = `${originalDesc}\n\n──────────────\n${starText}`;
-
-                // REMPLACEMENT DE L'ÉTOILE OFFICIELLE STREMIO (Convertie sur 10)
-                if (lbRating > 0) {
-                    finalMeta.imdbRating = (lbRating * 2).toFixed(1).toString();
+                    if (lbRating > 0) {
+                        finalMeta.imdbRating = (lbRating * 2).toFixed(1).toString();
+                    }
                 }
 
                 return finalMeta;
@@ -182,15 +191,13 @@ async function getWatchlist(username, sort = 'default') {
             movies.push(...batchResults);
         }
 
-        // -------------------------------------------------------------
-        // 🧠 PLAN B : LE TRI LOCAL PAR NOTE LETTERBOXD
-        // -------------------------------------------------------------
+        // PLAN B : TRI LOCAL
         if (localSortNeeded && sort === 'rating') {
             console.log(`[Scraper] 🧠 Application du "Plan B" : Tri local par note Letterboxd...`);
             movies.sort((a, b) => {
                 const ratingA = a.lbRating || 0;
                 const ratingB = b.lbRating || 0;
-                return ratingB - ratingA; // Du plus grand au plus petit
+                return ratingB - ratingA;
             });
         }
 
