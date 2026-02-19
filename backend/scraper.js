@@ -86,6 +86,17 @@ async function getWatchlist(username, sort = 'default') {
                 const response = await gotScraping.get(pageUrl);
                 const $ = cheerio.load(response.body);
 
+                // --- 🕵️ MOUCHARD AJOUTÉ ICI ---
+                const pageTitle = $('title').text();
+                console.log(`[Scraper] 🕵️ Titre lu par le bot : "${pageTitle.trim()}"`);
+
+                if (pageTitle.includes('Just a moment') || pageTitle.includes('Cloudflare') || pageTitle.includes('Un instant')) {
+                    console.log("[Scraper] 🚨 Cloudflare a bloqué ce tri spécifique !");
+                } else if (pageTitle.includes('Page not found') || pageTitle.includes('Error')) {
+                    console.log("[Scraper] ❌ Letterboxd dit que cette URL de tri n'existe plus !");
+                }
+                // ---------------------------------
+
                 const posters = $('[data-film-slug], [data-item-slug], [data-target-link], .film-poster');
 
                 console.log(`[Scraper] Éléments trouvés sur la page ${page} : ${posters.length}`);
