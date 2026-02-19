@@ -61,7 +61,7 @@ async function getWatchlist(username, sort = 'default') {
     switch (sort) {
         case 'popular': sortPath = 'by/popular/'; break;
         case 'rating': sortPath = 'by/rating/'; break;
-        case 'release': sortPath = 'by/release-newest/'; break;
+        case 'release': sortPath = 'by/release/'; break;
         case 'shortest': sortPath = 'by/shortest/'; break;
         default: sortPath = ''; break;
     }
