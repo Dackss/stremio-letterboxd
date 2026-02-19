@@ -20,7 +20,14 @@ const manifest = {
     behaviorHints: {
         configurable: true,
         configurationRequired: true
-    }
+    },
+    config: [
+        {
+            key: 'username',
+            type: 'text',
+            title: 'Pseudo Letterboxd'
+        }
+    ]
 };
 
 const builder = new addonBuilder(manifest);
@@ -31,42 +38,21 @@ builder.defineCatalogHandler(async (args) => {
     if (args.type === 'movie' && args.id === 'lb_watchlist') {
         const username = args.config && args.config.username;
 
-        if (!username) {
-            console.log('[Erreur] Aucun pseudo fourni.');
-            return { metas: [] };
-        }
+        if (!username) return { metas: [] };
 
         const movies = await getWatchlist(username);
-        console.log(`[Succès] Envoi de ${movies.length} films pour l'utilisateur ${username}.`);
-
         return {
             metas: movies,
             cacheMaxAge: 43200
         };
     }
-
     return { metas: [] };
 });
 
 const app = express();
 
-// --- 1. GESTION DES URLS PROPRES (ex: /watchlist-dackss/manifest.json) ---
-app.use((req, res, next) => {
-    const match = req.url.match(/^\/watchlist-([^/]+)\/(manifest\.json|catalog\/.*)$/);
-    if (match) {
-        const username = decodeURIComponent(match[1]);
-        const configStr = encodeURIComponent(JSON.stringify({ username }));
-        req.url = `/${configStr}/${match[2]}`;
-    }
-    next();
-});
+app.get('/', (req, res) => res.redirect('/configure'));
 
-// --- 2. REDIRECTION ACCUEIL (Pour le Health Check de Render) ---
-app.get('/', (req, res) => {
-    res.redirect('/configure');
-});
-
-// --- 3. PAGE DE CONFIGURATION ---
 app.get('/configure', (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -76,27 +62,26 @@ app.get('/configure', (req, res) => {
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>Configuration Letterboxd</title>
             <style>
-                body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #1c1c20; color: white; text-align: center; padding-top: 50px; }
-                .container { max-width: 400px; margin: 0 auto; background: #2a2a30; padding: 30px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
-                input { width: 85%; padding: 12px; font-size: 16px; border-radius: 5px; border: none; margin-bottom: 20px; outline: none; text-align: center; color: black; }
-                button { width: 90%; padding: 15px; font-size: 16px; background-color: #8A5A9E; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; transition: 0.2s; margin-bottom: 10px; }
-                button:hover { background-color: #724b82; }
+                body { font-family: 'Segoe UI', sans-serif; background-color: #1c1c20; color: white; text-align: center; padding-top: 50px; }
+                .container { max-width: 400px; margin: 0 auto; background: #2a2a30; padding: 30px; border-radius: 10px; }
+                input { width: 85%; padding: 12px; margin-bottom: 20px; border-radius: 5px; border: none; text-align: center; }
+                button { width: 90%; padding: 15px; background-color: #8A5A9E; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
             </style>
         </head>
         <body>
             <div class="container">
                 <h2>🎬 Addon Letterboxd</h2>
-                <p>Entrez votre pseudo public :</p>
-                <input type="text" id="username" placeholder="Exemple : dackss" />
+                <input type="text" id="username" placeholder="Pseudo Letterboxd (ex: dackss)" />
                 <button onclick="install()">Installer sur Stremio</button>
             </div>
             <script>
                 function install() {
                     const user = document.getElementById('username').value.trim();
-                    if (!user) return alert('Veuillez entrer un pseudo Letterboxd.');
-                    const host = window.location.host;
-                    const stremioUrl = 'stremio://' + host + '/watchlist-' + encodeURIComponent(user) + '/manifest.json';
-                    window.location.href = stremioUrl;
+                    if (!user) return alert('Pseudo requis');
+
+                    const config = encodeURIComponent(JSON.stringify({ username: user }));
+                    const url = window.location.host + '/' + config + '/manifest.json';
+                    window.location.href = 'stremio://' + url;
                 }
             </script>
         </body>
@@ -104,12 +89,10 @@ app.get('/configure', (req, res) => {
     `);
 });
 
-// --- 4. INTEGRATION DU SDK ---
+// Le router du SDK doit être monté à la fin
 app.use('/', getRouter(builder.getInterface()));
 
-// --- 5. DÉMARRAGE (Adapté à Render) ---
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[Serveur] Démarré sur le port ${PORT}`);
-    console.log(`[Serveur] URL de config : /configure`);
+    console.log(`[Serveur] En ligne sur le port ${PORT}`);
 });
