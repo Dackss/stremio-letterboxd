@@ -1,13 +1,11 @@
-const axios = require('axios');
-const puppeteer = require('puppeteer-extra');
-const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const cheerio = require('cheerio');
 
-// Activation du mode furtif pour contourner Cloudflare et les blocages anti-bots
-puppeteer.use(StealthPlugin());
-
-// Fonction intacte : récupère les détails du film sur les serveurs Stremio/Cinemeta
+// Récupère les détails du film sur les serveurs Stremio/Cinemeta
 async function getStremioMeta(fullName) {
     try {
+        // IMPORTATION DYNAMIQUE : Résout le conflit ESM / CommonJS
+        const { gotScraping } = await import('got-scraping');
+
         const cleanTitle = fullName.replace(/\s\(\d{4}\)$/, '').trim().toLowerCase();
         const yearMatch = fullName.match(/\((\d{4})\)$/);
         const targetYear = yearMatch ? parseInt(yearMatch[1], 10) : null;
@@ -16,11 +14,11 @@ async function getStremioMeta(fullName) {
         const seriesSearchUrl = `https://v3-cinemeta.strem.io/catalog/series/top/search=${encodeURIComponent(cleanTitle)}.json`;
 
         const [movieRes, seriesRes] = await Promise.all([
-            axios.get(movieSearchUrl).catch(() => ({ data: { metas: [] } })),
-            axios.get(seriesSearchUrl).catch(() => ({ data: { metas: [] } }))
+            gotScraping.get(movieSearchUrl).json().catch(() => ({ metas: [] })),
+            gotScraping.get(seriesSearchUrl).json().catch(() => ({ metas: [] }))
         ]);
 
-        const allMetas = [...(movieRes.data.metas || []), ...(seriesRes.data.metas || [])];
+        const allMetas = [...(movieRes.metas || []), ...(seriesRes.metas || [])];
 
         if (allMetas.length > 0) {
             let bestMatch = null;
@@ -42,9 +40,9 @@ async function getStremioMeta(fullName) {
             if (bestMatch && bestMatch.id) {
                 try {
                     const detailUrl = `https://v3-cinemeta.strem.io/meta/${bestMatch.type}/${bestMatch.id}.json`;
-                    const detailRes = await axios.get(detailUrl);
-                    if (detailRes.data && detailRes.data.meta) {
-                        return detailRes.data.meta;
+                    const detailRes = await gotScraping.get(detailUrl).json();
+                    if (detailRes && detailRes.meta) {
+                        return detailRes.meta;
                     }
                 } catch (e) { return bestMatch; }
             }
@@ -54,12 +52,12 @@ async function getStremioMeta(fullName) {
     return null;
 }
 
-// Nouvelle fonction de scraping propulsée par Puppeteer (Furtif)
+// Fonction de scraping allégée via got-scraping
 async function getWatchlist(username, sort = 'default') {
     let allRawMovies = [];
     let page = 1;
     let hasMore = true;
-    const maxPages = 5; // Nombre maximum de pages à analyser (tu peux augmenter si besoin)
+    const maxPages = 5;
 
     let sortPath = '';
     switch (sort) {
@@ -70,27 +68,12 @@ async function getWatchlist(username, sort = 'default') {
         default: sortPath = ''; break;
     }
 
-    console.log(`[Scraper] Lancement de Puppeteer (Stealth) pour : ${username} | Tri : ${sort}`);
+    console.log(`[Scraper] Lancement de got-scraping pour : ${username} | Tri : ${sort}`);
 
-    const browser = await puppeteer.launch({
-        headless: true, // "new" est obsolète dans les versions récentes
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-blink-features=AutomationControlled',
-            '--window-size=1920,1080',
-            '--disable-features=IsolateOrigins,site-per-process'
-        ],
-        ignoreDefaultArgs: ['--enable-automation']
-    });
     try {
-        const pageBrowser = await browser.newPage();
+        // IMPORTATION DYNAMIQUE ICI AUSSI
+        const { gotScraping } = await import('got-scraping');
 
-        await pageBrowser.setViewport({ width: 1920, height: 1080 });
-        await pageBrowser.setExtraHTTPHeaders({
-            'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
-            'Upgrade-Insecure-Requests': '1'
-        });
         while (hasMore && page <= maxPages) {
             const pageUrl = page === 1
                 ? `https://letterboxd.com/${username}/watchlist/${sortPath}`
@@ -98,95 +81,78 @@ async function getWatchlist(username, sort = 'default') {
 
             console.log(`[Scraper] Navigation vers : ${pageUrl}`);
 
-            const response = await pageBrowser.goto(pageUrl, { waitUntil: 'domcontentloaded' });
-
-            if (response.status() === 404) {
-                console.log(`[Scraper] Fin atteinte (Erreur 404) à la page ${page}.`);
-                break;
-            }
-
-            const pageTitle = await pageBrowser.title();
-            console.log(`[Scraper] Titre de la page détecté : "${pageTitle}"`);
-
-            if (pageTitle.includes("Just a moment") || pageTitle.includes("Cloudflare")) {
-                console.log("[Scraper] 🚨 ALERTE : Cloudflare a bloqué le bot ! On tente d'attendre qu'il se résolve seul...");
-            }
-
             try {
-                await pageBrowser.waitForSelector('[data-film-slug], [data-item-slug], .film-poster', { timeout: 10000 });
-                console.log("[Scraper] ✅ Affiches trouvées !");
-            } catch (e) {
-                console.log("[Scraper] ❌ Aucun poster trouvé après 10s d'attente.");
-                const htmlSnippet = await pageBrowser.content();
-                console.log(`[Scraper] Code source vu par le bot (extrait) : ${htmlSnippet.substring(0, 300)}`);
-            }
+                // Requête réseau furtive
+                const response = await gotScraping.get(pageUrl);
+                const $ = cheerio.load(response.body);
 
-            const moviesOnPage = await pageBrowser.evaluate(() => {
-                const posters = document.querySelectorAll('[data-film-slug], [data-item-slug], [data-target-link], .film-poster');
-                const movies = [];
+                const posters = $('[data-film-slug], [data-item-slug], [data-target-link], .film-poster');
 
-                posters.forEach(element => {
-                    let slug = element.getAttribute('data-item-slug') || element.getAttribute('data-film-slug') || element.getAttribute('data-target-link');
-                    let name = element.getAttribute('data-item-name') || element.getAttribute('data-film-name');
+                console.log(`[Scraper] Éléments trouvés sur la page ${page} : ${posters.length}`);
 
-                    if (!name) {
-                        const img = element.querySelector('img');
-                        if (img) name = img.getAttribute('alt');
-                    }
+                if (posters.length === 0) {
+                    hasMore = false;
+                } else {
+                    posters.each((i, element) => {
+                        let slug = $(element).attr('data-item-slug') || $(element).attr('data-film-slug') || $(element).attr('data-target-link');
+                        let name = $(element).attr('data-item-name') || $(element).attr('data-film-name');
 
-                    if (slug) {
-                        slug = slug.replace(/\/film\//g, '').replace(/\//g, '');
-                        if (!name) name = slug.replace(/-/g, ' ');
-                        movies.push({ slug, name });
-                    }
-                });
+                        if (!name) {
+                            const img = $(element).find('img');
+                            if (img.length) name = img.attr('alt');
+                        }
 
-                return movies;
-            });
+                        if (slug) {
+                            slug = slug.replace(/\/film\//g, '').replace(/\//g, '');
+                            if (!name) name = slug.replace(/-/g, ' ');
 
-            console.log(`[Scraper] Éléments trouvés sur la page ${page} : ${moviesOnPage.length}`);
-
-            if (moviesOnPage.length === 0) {
-                hasMore = false;
-            } else {
-                moviesOnPage.forEach(movie => {
-                    if (!allRawMovies.find(m => m.slug === movie.slug)) {
-                        allRawMovies.push(movie);
-                    }
-                });
-                page++;
+                            if (!allRawMovies.find(m => m.slug === slug)) {
+                                allRawMovies.push({ slug, name });
+                            }
+                        }
+                    });
+                    page++;
+                }
+            } catch (err) {
+                // Si on tombe sur une erreur 404 de Letterboxd, c'est la fin de la liste
+                if (err.response && err.response.statusCode === 404) {
+                    console.log(`[Scraper] Fin atteinte (Erreur 404) à la page ${page}.`);
+                    break;
+                }
+                throw err;
             }
         }
+
+        console.log(`[Scraper] Scraping terminé. Nombre total de films extraits : ${allRawMovies.length}`);
+
+        // --- PARTIE 2 : Conversion vers le format Stremio ---
+        console.log(`[Scraper] Récupération des métadonnées Stremio pour ${allRawMovies.length} films...`);
+        const movies = [];
+        const batchSize = 10;
+
+        for (let i = 0; i < allRawMovies.length; i += batchSize) {
+            const batch = allRawMovies.slice(i, i + batchSize);
+            const batchResults = await Promise.all(batch.map(async (raw) => {
+                const meta = await getStremioMeta(raw.name);
+                if (meta) return { ...meta, type: meta.type || 'movie', posterShape: 'poster' };
+                return {
+                    id: `lb:${raw.slug}`,
+                    type: 'movie',
+                    name: raw.name,
+                    poster: 'https://s.ltrbxd.com/static/img/empty-poster-125-AiuBHVCI.png',
+                    posterShape: 'poster'
+                };
+            }));
+            movies.push(...batchResults);
+        }
+
+        console.log(`[Scraper] Terminé. ${movies.length} films prêts pour Stremio.`);
+        return movies;
+
     } catch (error) {
-        console.error(`[Erreur Puppeteer] ${error.message}`);
-    } finally {
-        await browser.close();
-        console.log(`[Scraper] Navigateur fermé. Nombre total de films extraits : ${allRawMovies.length}`);
+        console.error(`[Erreur got-scraping] ${error.message}`);
+        return [];
     }
-
-    // --- PARTIE 2 : Conversion vers le format Stremio ---
-    console.log(`[Scraper] Récupération des métadonnées Stremio pour ${allRawMovies.length} films...`);
-    const movies = [];
-    const batchSize = 10;
-
-    for (let i = 0; i < allRawMovies.length; i += batchSize) {
-        const batch = allRawMovies.slice(i, i + batchSize);
-        const batchResults = await Promise.all(batch.map(async (raw) => {
-            const meta = await getStremioMeta(raw.name);
-            if (meta) return { ...meta, type: meta.type || 'movie', posterShape: 'poster' };
-            return {
-                id: `lb:${raw.slug}`,
-                type: 'movie',
-                name: raw.name,
-                poster: 'https://s.ltrbxd.com/static/img/empty-poster-125-AiuBHVCI.png',
-                posterShape: 'poster'
-            };
-        }));
-        movies.push(...batchResults);
-    }
-
-    console.log(`[Scraper] Terminé. ${movies.length} films prêts pour Stremio.`);
-    return movies;
 }
 
 module.exports = { getWatchlist };

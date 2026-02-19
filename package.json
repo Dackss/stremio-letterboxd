@@ -7,9 +7,8 @@
     "backend"
   ],
   "scripts": {
-    "build": "npm run build -w frontend && npx puppeteer browsers install chrome",
+    "build": "npm run build -w frontend",
     "build:frontend": "npm run build -w frontend",
-    "build:puppeteer": "npx puppeteer browsers install chrome",
     "start": "node backend/server.js",
     "dev:frontend": "npm run dev -w frontend",
     "dev:backend": "nodemon backend/server.js"
@@ -20,6 +19,7 @@
     "cheerio": "^1.2.0",
     "dotenv": "^16.6.1",
     "express": "^4.19.2",
+    "got-scraping": "^4.1.3",
     "puppeteer": "^24.37.5",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
