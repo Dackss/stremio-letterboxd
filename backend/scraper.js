@@ -1,11 +1,29 @@
 const cheerio = require('cheerio');
 
-// Récupère les détails du film sur les serveurs Stremio/Cinemeta
+// 1. Récupère la VRAIE note Letterboxd directement sur la page du film
+async function getLetterboxdRating(slug) {
+    try {
+        const { gotScraping } = await import('got-scraping');
+        const url = `https://letterboxd.com/film/${slug}/`;
+        const response = await gotScraping.get(url);
+        const $ = cheerio.load(response.body);
+
+        // Letterboxd cache la note globale dans les balises meta de Twitter (ex: "4.23 out of 5")
+        const ratingStr = $('meta[name="twitter:data2"]').attr('content');
+        if (ratingStr) {
+            const match = ratingStr.match(/([\d.]+)/);
+            if (match) return parseFloat(match[1]); // Renvoie 4.23
+        }
+    } catch (e) {
+        // En cas d'erreur (ex: film introuvable), on renvoie 0
+    }
+    return 0;
+}
+
+// 2. Récupère les affiches et métadonnées de base via Cinemeta
 async function getStremioMeta(fullName) {
     try {
-        // IMPORTATION DYNAMIQUE : Résout le conflit ESM / CommonJS
         const { gotScraping } = await import('got-scraping');
-
         const cleanTitle = fullName.replace(/\s\(\d{4}\)$/, '').trim().toLowerCase();
         const yearMatch = fullName.match(/\((\d{4})\)$/);
         const targetYear = yearMatch ? parseInt(yearMatch[1], 10) : null;
@@ -52,7 +70,7 @@ async function getStremioMeta(fullName) {
     return null;
 }
 
-// Fonction de scraping allégée via got-scraping
+// 3. Fonction principale de scraping
 async function getWatchlist(username, sort = 'default') {
     let allRawMovies = [];
     let page = 1;
@@ -60,9 +78,15 @@ async function getWatchlist(username, sort = 'default') {
     const maxPages = 5;
 
     let sortPath = '';
+    let localSortNeeded = false; // Activation du Plan B
+
+    // On trompe Cloudflare en ne demandant que des pages "propres"
     switch (sort) {
         case 'popular': sortPath = 'by/popular/'; break;
-        case 'rating': sortPath = 'by/rating/'; break;
+        case 'rating':
+            sortPath = ''; // TRICHE : On demande la page par défaut
+            localSortNeeded = true;
+            break;
         case 'release': sortPath = 'by/release-newest/'; break;
         case 'shortest': sortPath = 'by/shortest/'; break;
         default: sortPath = ''; break;
@@ -71,7 +95,6 @@ async function getWatchlist(username, sort = 'default') {
     console.log(`[Scraper] Lancement de got-scraping pour : ${username} | Tri : ${sort}`);
 
     try {
-        // IMPORTATION DYNAMIQUE ICI AUSSI
         const { gotScraping } = await import('got-scraping');
 
         while (hasMore && page <= maxPages) {
@@ -82,36 +105,8 @@ async function getWatchlist(username, sort = 'default') {
             console.log(`[Scraper] Navigation vers : ${pageUrl}`);
 
             try {
-                // Requête réseau furtive
-                const refererUrl = page === 1
-                    ? `https://letterboxd.com/${username}/watchlist/`
-                    : `https://letterboxd.com/${username}/watchlist/${sortPath}page/${page - 1}/`;
-
-                const response = await gotScraping.get(pageUrl, {
-                    headerGeneratorOptions: {
-                        browsers: [{ name: 'chrome', minVersion: 120 }],
-                        devices: ['desktop'],
-                        operatingSystems: ['windows', 'macos']
-                    },
-                    headers: {
-                        'Referer': refererUrl,
-                        'Upgrade-Insecure-Requests': '1',
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-                        'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7'
-                    }
-                });
+                const response = await gotScraping.get(pageUrl);
                 const $ = cheerio.load(response.body);
-                // --- 🕵️ MOUCHARD AJOUTÉ ICI ---
-                const pageTitle = $('title').text();
-                console.log(`[Scraper] 🕵️ Titre lu par le bot : "${pageTitle.trim()}"`);
-
-                if (pageTitle.includes('Just a moment') || pageTitle.includes('Cloudflare') || pageTitle.includes('Un instant')) {
-                    console.log("[Scraper] 🚨 Cloudflare a bloqué ce tri spécifique !");
-                } else if (pageTitle.includes('Page not found') || pageTitle.includes('Error')) {
-                    console.log("[Scraper] ❌ Letterboxd dit que cette URL de tri n'existe plus !");
-                }
-                // ---------------------------------
-
                 const posters = $('[data-film-slug], [data-item-slug], [data-target-link], .film-poster');
 
                 console.log(`[Scraper] Éléments trouvés sur la page ${page} : ${posters.length}`);
@@ -140,36 +135,63 @@ async function getWatchlist(username, sort = 'default') {
                     page++;
                 }
             } catch (err) {
-                // Si on tombe sur une erreur 404 de Letterboxd, c'est la fin de la liste
-                if (err.response && err.response.statusCode === 404) {
-                    console.log(`[Scraper] Fin atteinte (Erreur 404) à la page ${page}.`);
-                    break;
-                }
+                if (err.response && err.response.statusCode === 404) break;
                 throw err;
             }
         }
 
-        console.log(`[Scraper] Scraping terminé. Nombre total de films extraits : ${allRawMovies.length}`);
-
-        // --- PARTIE 2 : Conversion vers le format Stremio ---
-        console.log(`[Scraper] Récupération des métadonnées Stremio pour ${allRawMovies.length} films...`);
+        console.log(`[Scraper] Films extraits : ${allRawMovies.length}. Récupération des notes Letterboxd en cours...`);
         const movies = [];
         const batchSize = 10;
 
         for (let i = 0; i < allRawMovies.length; i += batchSize) {
             const batch = allRawMovies.slice(i, i + batchSize);
             const batchResults = await Promise.all(batch.map(async (raw) => {
-                const meta = await getStremioMeta(raw.name);
-                if (meta) return { ...meta, type: meta.type || 'movie', posterShape: 'poster' };
-                return {
+
+                // On récupère les deux sources en parallèle pour aller plus vite
+                const [meta, lbRating] = await Promise.all([
+                    getStremioMeta(raw.name),
+                    getLetterboxdRating(raw.slug)
+                ]);
+
+                let finalMeta = meta ? { ...meta, type: meta.type || 'movie', posterShape: 'poster' } : {
                     id: `lb:${raw.slug}`,
                     type: 'movie',
                     name: raw.name,
                     poster: 'https://s.ltrbxd.com/static/img/empty-poster-125-AiuBHVCI.png',
                     posterShape: 'poster'
                 };
+
+                // SAUVEGARDE POUR LE TRI
+                finalMeta.lbRating = lbRating;
+
+                // MODIFICATION DE LA DESCRIPTION DANS STREMIO (Note en bas)
+                const starText = lbRating > 0 ? `⭐ Note Letterboxd : ${lbRating.toFixed(2)} / 5` : `⭐ Note Letterboxd : Non noté`;
+                const originalDesc = finalMeta.description ? finalMeta.description.trim() : 'Aucune description disponible.';
+
+                // On place la note tout en bas, séparée par une ligne visuelle
+                finalMeta.description = `${originalDesc}\n\n──────────────\n${starText}`;
+
+                // REMPLACEMENT DE L'ÉTOILE OFFICIELLE STREMIO (Convertie sur 10)
+                if (lbRating > 0) {
+                    finalMeta.imdbRating = (lbRating * 2).toFixed(1).toString();
+                }
+
+                return finalMeta;
             }));
             movies.push(...batchResults);
+        }
+
+        // -------------------------------------------------------------
+        // 🧠 PLAN B : LE TRI LOCAL PAR NOTE LETTERBOXD
+        // -------------------------------------------------------------
+        if (localSortNeeded && sort === 'rating') {
+            console.log(`[Scraper] 🧠 Application du "Plan B" : Tri local par note Letterboxd...`);
+            movies.sort((a, b) => {
+                const ratingA = a.lbRating || 0;
+                const ratingB = b.lbRating || 0;
+                return ratingB - ratingA; // Du plus grand au plus petit
+            });
         }
 
         console.log(`[Scraper] Terminé. ${movies.length} films prêts pour Stremio.`);
