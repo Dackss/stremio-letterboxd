@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "build": "npm run build -w frontend",
+    "build:frontend": "npm run build -w frontend",
     "start": "node backend/server.js",
     "dev:frontend": "npm run dev -w frontend",
     "dev:backend": "nodemon backend/server.js"
@@ -17,6 +18,9 @@
     "cheerio": "^1.2.0",
     "dotenv": "^16.6.1",
     "express": "^4.19.2",
+    "puppeteer": "^24.37.4",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "rss-parser": "^3.13.0",
     "stremio-addon-sdk": "^1.6.10"
   },
