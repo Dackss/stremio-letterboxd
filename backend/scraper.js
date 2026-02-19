@@ -95,11 +95,20 @@ async function getWatchlist(username, sort = 'default') {
                 break;
             }
 
-            // AJOUT : On attend jusqu'à 3 secondes que Cloudflare disparaisse et que les affiches chargent
+            const pageTitle = await pageBrowser.title();
+            console.log(`[Scraper] Titre de la page détecté : "${pageTitle}"`);
+
+            if (pageTitle.includes("Just a moment") || pageTitle.includes("Cloudflare")) {
+                console.log("[Scraper] 🚨 ALERTE : Cloudflare a bloqué le bot ! On tente d'attendre qu'il se résolve seul...");
+            }
+
             try {
-                await pageBrowser.waitForSelector('[data-film-slug], [data-item-slug], .film-poster', { timeout: 3000 });
+                await pageBrowser.waitForSelector('[data-film-slug], [data-item-slug], .film-poster', { timeout: 10000 });
+                console.log("[Scraper] ✅ Affiches trouvées !");
             } catch (e) {
-                console.log("[Scraper] Aucun poster trouvé après 3s d'attente (Fin de liste ou blocage persistant).");
+                console.log("[Scraper] ❌ Aucun poster trouvé après 10s d'attente.");
+                const htmlSnippet = await pageBrowser.content();
+                console.log(`[Scraper] Code source vu par le bot (extrait) : ${htmlSnippet.substring(0, 300)}`);
             }
 
             const moviesOnPage = await pageBrowser.evaluate(() => {
