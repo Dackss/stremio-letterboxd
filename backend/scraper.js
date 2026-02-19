@@ -77,30 +77,37 @@ async function getWatchlist(username, sort = 'default') {
 
     try {
         while (hasMore && page <= maxPages) {
-            // L'URL s'adapte à la pagination
             const pageUrl = page === 1 ? baseUrl : `${baseUrl}page/${page}/`;
 
             console.log(`[Scraper] Analyse de ${pageUrl}...`);
 
             try {
                 const { data } = await axios.get(pageUrl, {
-                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                        'Accept-Language': 'fr,fr-FR;q=0.8,en-US;q=0.5,en;q=0.3'
+                    }
                 });
 
                 const $ = cheerio.load(data);
-                const posters = $('.react-component[data-component-class="LazyPoster"]');
+
+                const posters = $('.film-poster');
 
                 if (posters.length === 0) {
                     hasMore = false;
                 } else {
                     posters.each((i, element) => {
-                        const slug = $(element).attr('data-item-slug');
-                        const name = $(element).attr('data-item-name');
+                        const slug = $(element).attr('data-film-slug');
+                        const name = $(element).find('img').attr('alt') || (slug ? slug.replace(/-/g, ' ') : null);
+
                         if (slug && name) allRawMovies.push({ slug, name });
                     });
                     page++;
                 }
             } catch (err) {
+                // Affiche l'erreur réelle dans les logs (ex: 403 Cloudflare)
+                console.error(`[Erreur HTTP] Échec sur ${pageUrl} :`, err.message);
                 hasMore = false;
             }
         }
