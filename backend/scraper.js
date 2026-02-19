@@ -5,9 +5,17 @@ async function getLetterboxdRating(slug) {
     try {
         const { gotScraping } = await import('got-scraping');
         const url = `https://letterboxd.com/film/${slug}/`;
-        const response = await gotScraping.get(url);
-        const $ = cheerio.load(response.body);
 
+        // On met le bouclier furtif ici aussi au cas où
+        const response = await gotScraping.get(url, {
+            headerGeneratorOptions: {
+                browsers: [{ name: 'chrome', minVersion: 120 }],
+                devices: ['desktop'],
+                operatingSystems: ['windows', 'macos']
+            }
+        });
+
+        const $ = cheerio.load(response.body);
         const ratingStr = $('meta[name="twitter:data2"]').attr('content');
         if (ratingStr) {
             const match = ratingStr.match(/([\d.]+)/);
@@ -75,14 +83,13 @@ async function getWatchlist(username, sort = 'default') {
     let sortPath = '';
     let localSortNeeded = false;
 
-    // CORRECTION ICI : "by/release/" au lieu de "by/release-newest/"
     switch (sort) {
         case 'popular': sortPath = 'by/popular/'; break;
         case 'rating':
-            sortPath = '';
+            sortPath = ''; // Plan B : On demande la liste par défaut
             localSortNeeded = true;
             break;
-        case 'release': sortPath = 'by/release/'; break;
+        case 'release': sortPath = 'by/release/'; break; // URL corrigée
         case 'shortest': sortPath = 'by/shortest/'; break;
         default: sortPath = ''; break;
     }
@@ -100,8 +107,30 @@ async function getWatchlist(username, sort = 'default') {
             console.log(`[Scraper] Navigation vers : ${pageUrl}`);
 
             try {
-                const response = await gotScraping.get(pageUrl);
+                // 🛡️ BOUCLIER FURTIF ANTI-CLOUDFLARE
+                const response = await gotScraping.get(pageUrl, {
+                    headerGeneratorOptions: {
+                        browsers: [{ name: 'chrome', minVersion: 120 }],
+                        devices: ['desktop'],
+                        operatingSystems: ['windows', 'macos']
+                    },
+                    headers: {
+                        'Upgrade-Insecure-Requests': '1',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                        'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7'
+                    }
+                });
+
                 const $ = cheerio.load(response.body);
+
+                // 🕵️ LE MOUCHARD EST DE RETOUR
+                const pageTitle = $('title').text().trim();
+                if (pageTitle.includes('Just a moment') || pageTitle.includes('Cloudflare') || pageTitle.includes('Un instant')) {
+                    console.log(`[Scraper] 🚨 BLOCAGE CLOUDFLARE DÉTECTÉ ! Titre : "${pageTitle}"`);
+                } else if (pageTitle === 'Page not found') {
+                    console.log(`[Scraper] ❌ ERREUR 404 : L'URL Letterboxd n'existe pas.`);
+                }
+
                 const posters = $('[data-film-slug], [data-item-slug], [data-target-link], .film-poster');
 
                 console.log(`[Scraper] Éléments trouvés sur la page ${page} : ${posters.length}`);
@@ -135,9 +164,9 @@ async function getWatchlist(username, sort = 'default') {
             }
         }
 
-        // AFFICHAGE DES LOGS INTELLIGENT
+        // LOGS INTELLIGENTS
         if (sort === 'rating') {
-            console.log(`[Scraper] Films extraits : ${allRawMovies.length}. Récupération des notes Letterboxd en cours (ça peut prendre du temps)...`);
+            console.log(`[Scraper] Films extraits : ${allRawMovies.length}. Récupération des notes Letterboxd en cours...`);
         } else {
             console.log(`[Scraper] Films extraits : ${allRawMovies.length}. Récupération rapide des affiches Stremio...`);
         }
@@ -152,7 +181,7 @@ async function getWatchlist(username, sort = 'default') {
                 let meta;
                 let lbRating = 0;
 
-                // OPTIMISATION : On ne va lire la note Letterboxd QUE si l'utilisateur demande le tri "rating"
+                // OPTIMISATION : Requête Letterboxd individuelle SEULEMENT pour le tri "rating"
                 if (sort === 'rating') {
                     const [fetchedMeta, fetchedLbRating] = await Promise.all([
                         getStremioMeta(raw.name),
@@ -172,13 +201,14 @@ async function getWatchlist(username, sort = 'default') {
                     posterShape: 'poster'
                 };
 
-                // AJOUT DE LA NOTE SEULEMENT SI DEMANDÉ
+                // MODIFICATION DE LA DESCRIPTION SEULEMENT SI DEMANDÉ
                 if (sort === 'rating') {
                     finalMeta.lbRating = lbRating;
 
-                    // La note bien séparée tout en bas
                     const starText = lbRating > 0 ? `⭐ Note Letterboxd : ${lbRating.toFixed(2)} / 5` : `⭐ Note Letterboxd : Non noté`;
                     const originalDesc = finalMeta.description ? finalMeta.description.trim() : 'Aucune description disponible.';
+
+                    // La note bien séparée tout en bas
                     finalMeta.description = `${originalDesc}\n\n──────────────\n${starText}`;
 
                     if (lbRating > 0) {
