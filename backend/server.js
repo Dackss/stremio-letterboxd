@@ -24,9 +24,12 @@ const builder = new addonBuilder(manifest);
 
 builder.defineCatalogHandler(async (args) => {
     const username = args.config?.username || "dackss";
+    const sort = args.config?.sort || "default";
+
     if (args.type === 'movie' && args.id === 'lb_watchlist_v2') {
         try {
-            const movies = await getWatchlist(username);
+            // <-- AJOUT DE LA VARIABLE 'sort' EN SECOND PARAMETRE
+            const movies = await getWatchlist(username, sort);
             const filePath = path.join(__dirname, '../movies.json');
             fs.writeFileSync(filePath, JSON.stringify(movies, null, 2), 'utf-8');
             return { metas: movies, cacheMaxAge: 0 };
@@ -36,7 +39,6 @@ builder.defineCatalogHandler(async (args) => {
     }
     return { metas: [] };
 });
-
 const app = express();
 
 // Important : bypass les headers pour les tunnels
