@@ -61,21 +61,26 @@ async function getStremioMeta(fullName) {
     return null;
 }
 
-async function getWatchlist(username) {
+async function getWatchlist(username, sort = 'default') {
     let allRawMovies = [];
     let page = 1;
     let hasMore = true;
     const maxPages = 5;
 
-    console.log(`[Scraper] Récupération de la watchlist pour l'utilisateur : ${username}`);
+    console.log(`[Scraper] Récupération de la watchlist de ${username} (Tri: ${sort})`);
+
+    let baseUrl = `https://letterboxd.com/${username}/watchlist/`;
+    if (sort === 'popular') baseUrl += 'by/popular/';
+    if (sort === 'rating') baseUrl += 'by/rating/';
+    if (sort === 'release') baseUrl += 'by/release/';
+    if (sort === 'shortest') baseUrl += 'by/shortest/';
 
     try {
         while (hasMore && page <= maxPages) {
-            const pageUrl = page === 1
-                ? `https://letterboxd.com/${username}/watchlist/`
-                : `https://letterboxd.com/${username}/watchlist/page/${page}/`;
+            // L'URL s'adapte à la pagination
+            const pageUrl = page === 1 ? baseUrl : `${baseUrl}page/${page}/`;
 
-            console.log(`[Scraper] Analyse de la page ${page}...`);
+            console.log(`[Scraper] Analyse de ${pageUrl}...`);
 
             try {
                 const { data } = await axios.get(pageUrl, {

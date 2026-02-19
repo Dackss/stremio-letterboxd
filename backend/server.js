@@ -5,9 +5,9 @@ const { getWatchlist } = require('./scraper');
 
 const manifest = {
     id: 'org.stremio.letterboxd.watchlist',
-    version: '1.1.0',
+    version: '1.2.0',
     name: 'Letterboxd Watchlist',
-    description: 'Affiche ta watchlist Letterboxd',
+    description: 'Affiche ta watchlist Letterboxd avec des filtres personnalisés',
     resources: ['catalog'],
     types: ['movie'],
     catalogs: [
@@ -18,52 +18,36 @@ const manifest = {
         }
     ],
     idPrefixes: ['lb:'],
-    behaviorHints: {
-        configurable: true,
-        configurationRequired: true
-    },
+    behaviorHints: { configurable: true, configurationRequired: true },
     config: [
-        {
-            key: 'username',
-            type: 'text',
-            title: 'Pseudo Letterboxd'
-        }
+        { key: 'username', type: 'text', title: 'Pseudo Letterboxd' },
+        { key: 'sort', type: 'text', title: 'Tri', default: 'default' }
     ]
 };
 
 const builder = new addonBuilder(manifest);
 
 builder.defineCatalogHandler(async (args) => {
-    console.log(`[Requête] Catalogue : ${args.type} - ${args.id}`);
-
     if (args.type === 'movie' && args.id === 'lb_watchlist') {
         const username = args.config && args.config.username;
+        const sort = args.config && args.config.sort ? args.config.sort : 'default';
 
         if (!username) return { metas: [] };
 
-        const movies = await getWatchlist(username);
-        return {
-            metas: movies,
-            cacheMaxAge: 43200
-        };
+        const movies = await getWatchlist(username, sort);
+        return { metas: movies, cacheMaxAge: 43200 }; // Cache de 12h
     }
     return { metas: [] };
 });
 
 const app = express();
 
-// 1. On indique à Express où trouver les fichiers statiques de React (le build)
 app.use(express.static(path.join(__dirname, '../frontend/dist')));
-
-// 2. Redirection de la racine vers /configure
 app.get('/', (req, res) => res.redirect('/configure'));
-
-// 3. Quand l'utilisateur va sur /configure, on renvoie l'application React
 app.get('/configure', (req, res) => {
     res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
 });
 
-// 4. Le router du SDK Stremio doit être monté à la fin
 app.use('/', getRouter(builder.getInterface()));
 
 const PORT = process.env.PORT || 7000;
