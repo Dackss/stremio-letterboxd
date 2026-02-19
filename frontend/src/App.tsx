@@ -12,11 +12,15 @@ export default function App() {
     useEffect(() => {
         if (username.trim()) {
             const host = window.location.host;
-            let configStr = `username=${encodeURIComponent(username.trim())}`;
+
+            // Création d'un objet de configuration propre pour Stremio
+            const configObj: Record<string, string> = { username: username.trim() };
 
             if (sort !== 'default') {
-                configStr += `|sort=${sort}`;
+                configObj.sort = sort;
             }
+
+            const configStr = encodeURIComponent(JSON.stringify(configObj));
 
             setInstallUrl(`stremio://${host}/${configStr}/manifest.json`);
         } else {
