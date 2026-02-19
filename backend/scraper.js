@@ -67,12 +67,15 @@ async function getWatchlist(username, sort = 'default') {
     let hasMore = true;
     const maxPages = 5;
 
-    console.log(`[Scraper] Récupération de la watchlist de ${username} (Tri: ${sort})`);
+    // FORCER LES MINUSCULES POUR ÉVITER LES REDIRECTIONS BLOQUÉES
+    const cleanUsername = username.toLowerCase().trim();
 
-    let baseUrl = `https://letterboxd.com/${username}/watchlist/`;
+    console.log(`[Scraper] Récupération de la watchlist de ${cleanUsername} (Tri: ${sort})`);
+
+    let baseUrl = `https://letterboxd.com/${cleanUsername}/watchlist/`;
     if (sort === 'popular') baseUrl += 'by/popular/';
     if (sort === 'rating') baseUrl += 'by/rating/';
-    if (sort === 'release') baseUrl += 'by/release/';
+    if (sort === 'release') baseUrl += 'by/release-newest/'; // CORRECTION DU LIEN
     if (sort === 'shortest') baseUrl += 'by/shortest/';
 
     try {
@@ -91,7 +94,6 @@ async function getWatchlist(username, sort = 'default') {
                 });
 
                 const $ = cheerio.load(data);
-
                 const posters = $('.film-poster');
 
                 if (posters.length === 0) {
@@ -100,19 +102,17 @@ async function getWatchlist(username, sort = 'default') {
                     posters.each((i, element) => {
                         const slug = $(element).attr('data-film-slug');
                         const name = $(element).find('img').attr('alt') || (slug ? slug.replace(/-/g, ' ') : null);
-
                         if (slug && name) allRawMovies.push({ slug, name });
                     });
                     page++;
                 }
             } catch (err) {
-                // Affiche l'erreur réelle dans les logs (ex: 403 Cloudflare)
                 console.error(`[Erreur HTTP] Échec sur ${pageUrl} :`, err.message);
                 hasMore = false;
             }
         }
 
-        console.log(`[Scraper] ${allRawMovies.length} films trouvés sur Letterboxd.`);
+        console.log(`[Scraper] ${allRawMovies.length} films trouvés.`);
         console.log(`[Cinemeta] Synchronisation des métadonnées en cours...`);
 
         const movies = [];

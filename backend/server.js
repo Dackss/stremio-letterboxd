@@ -13,7 +13,7 @@ const manifest = {
     catalogs: [
         {
             type: 'movie',
-            id: 'lb_watchlist',
+            id: 'lb_watchlist_v2', // CHANGEMENT DE L'ID POUR PURGER LE CACHE
             name: 'Ma Watchlist Letterboxd'
         }
     ],
@@ -28,14 +28,14 @@ const manifest = {
 const builder = new addonBuilder(manifest);
 
 builder.defineCatalogHandler(async (args) => {
-    if (args.type === 'movie' && args.id === 'lb_watchlist') {
+    if (args.type === 'movie' && args.id === 'lb_watchlist_v2') {
         const username = args.config && args.config.username;
         const sort = args.config && args.config.sort ? args.config.sort : 'default';
 
         if (!username) return { metas: [] };
 
         const movies = await getWatchlist(username, sort);
-        return { metas: movies, cacheMaxAge: 43200 }; // Cache de 12h
+        return { metas: movies, cacheMaxAge: 3600 }; // Cache réduit à 1h
     }
     return { metas: [] };
 });
