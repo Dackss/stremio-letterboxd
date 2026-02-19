@@ -13,16 +13,19 @@ export default function App() {
         if (username.trim()) {
             const host = window.location.host;
 
-            // Création d'un objet de configuration propre pour Stremio
-            const configObj: Record<string, string> = { username: username.trim() };
+            const configArr = [];
+            configArr.push(`username=${encodeURIComponent(username.trim())}`);
 
             if (sort !== 'default') {
-                configObj.sort = sort;
+                configArr.push(`sort=${encodeURIComponent(sort)}`);
             }
 
-            const configStr = encodeURIComponent(JSON.stringify(configObj));
+            // On rejoint les paramètres avec le séparateur "|"
+            const configStr = configArr.join('|');
 
             setInstallUrl(`stremio://${host}/${configStr}/manifest.json`);
+            // ----------------------
+
         } else {
             setInstallUrl('');
         }
