@@ -8,20 +8,18 @@ export default function App() {
     const [username, setUsername] = useState('');
     const [sort, setSort] = useState('default');
     const [installUrl, setInstallUrl] = useState('');
-
     useEffect(() => {
         if (username.trim()) {
             const host = window.location.host;
 
-            // CORRECT : Format Stremio "clé=valeur|clé=valeur"
-            const configParts = [];
-            configParts.push(`username=${encodeURIComponent(username.trim())}`);
+            // CORRECTION : On utilise un véritable objet JSON pour la config
+            const configObj = {
+                username: username.trim(),
+                sort: sort
+            };
 
-            if (sort !== 'default') {
-                configParts.push(`sort=${encodeURIComponent(sort)}`);
-            }
-
-            const configStr = configParts.join('|');
+            // On encode l'objet en format URL sécurisé
+            const configStr = encodeURIComponent(JSON.stringify(configObj));
             setInstallUrl(`stremio://${host}/${configStr}/manifest.json`);
         } else {
             setInstallUrl('');
