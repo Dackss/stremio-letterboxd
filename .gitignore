@@ -1,5 +1,6 @@
 # Dépendances Node.js (ne JAMAIS commiter ça)
 node_modules/
+frontend/node_modules
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
