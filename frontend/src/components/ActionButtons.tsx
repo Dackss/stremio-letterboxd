@@ -16,7 +16,7 @@ export default function ActionButtons({ username, installUrl }: ActionButtonsPro
     const handleCopy = () => {
         if (installUrl) {
             // On force le HTTPS pour la copie de l'URL
-            const webUrl = installUrl.replace('stremio://', 'https://');
+            const webUrl = installUrl.replace('stremio://', 'http://');
             navigator.clipboard.writeText(webUrl);
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
