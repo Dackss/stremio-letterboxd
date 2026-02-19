@@ -28,17 +28,20 @@ builder.defineCatalogHandler(async (args) => {
 
     if (args.type === 'movie' && args.id === 'lb_watchlist_v2') {
         try {
-            // <-- AJOUT DE LA VARIABLE 'sort' EN SECOND PARAMETRE
             const movies = await getWatchlist(username, sort);
-            const filePath = path.join(__dirname, '../movies.json');
+
+            const filePath = path.join(__dirname, `../movies_${username}_${sort}.json`);
             fs.writeFileSync(filePath, JSON.stringify(movies, null, 2), 'utf-8');
+
             return { metas: movies, cacheMaxAge: 0 };
         } catch (err) {
+            console.error(err);
             return { metas: [] };
         }
     }
     return { metas: [] };
 });
+
 const app = express();
 
 // Important : bypass les headers pour les tunnels
