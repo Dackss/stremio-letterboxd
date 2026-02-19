@@ -39,6 +39,17 @@ builder.defineCatalogHandler(async (args) => {
 });
 
 const app = express();
+
+// 1. Servir le routeur de l'addon (pour /manifest.json)
 app.use('/', getRouter(builder.getInterface()));
+
+// 2. Servir les fichiers statiques du dossier frontend/dist (après le build)
+app.use(express.static(path.join(__dirname, '../frontend/dist')));
+
+// 3. Rediriger toutes les autres requêtes vers l'index.html du frontend
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
+});
+
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, () => console.log(`[SERVEUR] Prêt sur http://localhost:${PORT}`));
