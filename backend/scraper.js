@@ -73,14 +73,24 @@ async function getWatchlist(username, sort = 'default') {
     console.log(`[Scraper] Lancement de Puppeteer (Stealth) pour : ${username} | Tri : ${sort}`);
 
     const browser = await puppeteer.launch({
-        headless: "new",
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        headless: true, // "new" est obsolète dans les versions récentes
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-blink-features=AutomationControlled',
+            '--window-size=1920,1080',
+            '--disable-features=IsolateOrigins,site-per-process'
+        ],
+        ignoreDefaultArgs: ['--enable-automation']
     });
-
     try {
         const pageBrowser = await browser.newPage();
-        await pageBrowser.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
 
+        await pageBrowser.setViewport({ width: 1920, height: 1080 });
+        await pageBrowser.setExtraHTTPHeaders({
+            'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Upgrade-Insecure-Requests': '1'
+        });
         while (hasMore && page <= maxPages) {
             const pageUrl = page === 1
                 ? `https://letterboxd.com/${username}/watchlist/${sortPath}`
