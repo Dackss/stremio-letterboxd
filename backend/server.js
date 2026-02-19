@@ -1,4 +1,5 @@
 const express = require('express');
+const path = require('path');
 const { addonBuilder, getRouter } = require('stremio-addon-sdk');
 const { getWatchlist } = require('./scraper');
 
@@ -51,45 +52,18 @@ builder.defineCatalogHandler(async (args) => {
 
 const app = express();
 
+// 1. On indique à Express où trouver les fichiers statiques de React (le build)
+app.use(express.static(path.join(__dirname, '../frontend/dist')));
+
+// 2. Redirection de la racine vers /configure
 app.get('/', (req, res) => res.redirect('/configure'));
 
+// 3. Quand l'utilisateur va sur /configure, on renvoie l'application React
 app.get('/configure', (req, res) => {
-    res.send(`
-        <!DOCTYPE html>
-        <html lang="fr">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Configuration Letterboxd</title>
-            <style>
-                body { font-family: 'Segoe UI', sans-serif; background-color: #1c1c20; color: white; text-align: center; padding-top: 50px; }
-                .container { max-width: 400px; margin: 0 auto; background: #2a2a30; padding: 30px; border-radius: 10px; }
-                input { width: 85%; padding: 12px; margin-bottom: 20px; border-radius: 5px; border: none; text-align: center; }
-                button { width: 90%; padding: 15px; background-color: #8A5A9E; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h2>🎬 Addon Letterboxd</h2>
-                <input type="text" id="username" placeholder="Pseudo Letterboxd (ex: dackss)" />
-                <button onclick="install()">Installer sur Stremio</button>
-            </div>
-            <script>
-                function install() {
-                    const user = document.getElementById('username').value.trim();
-                    if (!user) return alert('Pseudo requis');
-
-                    const config = encodeURIComponent(JSON.stringify({ username: user }));
-                    const url = window.location.host + '/' + config + '/manifest.json';
-                    window.location.href = 'stremio://' + url;
-                }
-            </script>
-        </body>
-        </html>
-    `);
+    res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
 });
 
-// Le router du SDK doit être monté à la fin
+// 4. Le router du SDK Stremio doit être monté à la fin
 app.use('/', getRouter(builder.getInterface()));
 
 const PORT = process.env.PORT || 7000;

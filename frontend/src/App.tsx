@@ -1,35 +1,39 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { useState, useEffect } from 'react';
+import Header from './components/Header';
+import ConfigForm from './components/ConfigForm';
+import ActionButtons from './components/ActionButtons';
+import Footer from './components/Footer';
 
-function App() {
-  const [count, setCount] = useState(0)
+export default function App() {
+    const [username, setUsername] = useState('');
+    const [installUrl, setInstallUrl] = useState('');
 
-  return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+    useEffect(() => {
+        if (username.trim()) {
+            const host = window.location.host; // Ex: ton-app.onrender.com
+            // On encode proprement le JSON requis par le SDK
+            const config = encodeURIComponent(JSON.stringify({ username: username.trim() }));
+
+            setInstallUrl(`stremio://${host}/${config}/manifest.json`);
+        } else {
+            setInstallUrl('');
+        }
+    }, [username]);
+
+    return (
+        <div className="min-h-screen bg-[#14181c] text-slate-300 font-sans flex flex-col items-center justify-center p-6 selection:bg-[#00e054] selection:text-[#14181c]">
+            <div className="max-w-md w-full">
+                <Header />
+
+                <div className="bg-[#1c232e] border border-[#2c3440] rounded-2xl p-8 shadow-2xl">
+                    <div className="space-y-6">
+                        <ConfigForm username={username} setUsername={setUsername} />
+                        <ActionButtons username={username} installUrl={installUrl} />
+                    </div>
+                </div>
+
+                <Footer />
+            </div>
+        </div>
+    );
 }
-
-export default App
