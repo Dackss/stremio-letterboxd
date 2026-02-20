@@ -15,8 +15,8 @@ export default function LivePreview({ movies, isLoading, username }: LivePreview
     if (!username) return null;
 
     return (
-        <div className="mt-6 pt-6 border-t border-[#2c3440] animate-in fade-in duration-500">
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-[0.15em] mb-4 flex justify-between items-center">
+        <div className="mt-4 pt-4 border-t border-[#2c3440] animate-in fade-in duration-500">
+            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-[0.15em] mb-3 flex justify-between items-center">
                 Aperçu de ta watchlist
                 {isLoading && <Loader2 size={14} className="animate-spin text-[#40bcf4]" />}
             </h3>

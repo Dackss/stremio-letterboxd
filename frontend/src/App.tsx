@@ -54,15 +54,18 @@ export default function App() {
     }, [username, sort]);
 
     return (
-        <div className="min-h-screen bg-[#14181c] text-slate-300 font-sans flex flex-col items-center justify-center p-6 selection:bg-[#00e054] selection:text-black relative overflow-x-hidden">
+        // Remplacement de min-h-screen par h-[100dvh] overflow-hidden pour forcer l'écran unique
+        <div className="h-[100dvh] bg-[#14181c] text-slate-300 font-sans flex flex-col items-center justify-center p-4 selection:bg-[#00e054] selection:text-black relative overflow-hidden">
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-[#00e054] opacity-[0.03] blur-[100px] pointer-events-none rounded-full"></div>
 
-            <div className="max-w-md w-full relative z-10 animate-fade-in-up">
+            <div className="max-w-md w-full relative z-10 animate-fade-in-up flex flex-col items-center">
                 <Header />
-                <div className="bg-[#1c232e] border border-[#2c3440] rounded-2xl p-8 shadow-2xl relative group">
+                {/* p-8 devient p-6 pour gagner de la place */}
+                <div className="bg-[#1c232e] border border-[#2c3440] rounded-2xl p-6 shadow-2xl relative group w-full">
                     <div className="absolute inset-0 border-2 border-transparent group-hover:border-[#2c3440]/50 rounded-2xl transition-colors pointer-events-none"></div>
 
-                    <div className="space-y-6 relative z-10">
+                    {/* space-y-6 devient space-y-4 */}
+                    <div className="space-y-4 relative z-10">
                         <ConfigForm
                             username={username}
                             setUsername={setUsername}
@@ -72,7 +75,6 @@ export default function App() {
                             isValid={isValid}
                         />
 
-                        {/* AJOUT DE L'APERÇU ICI */}
                         <LivePreview
                             movies={previewMovies}
                             isLoading={isValidating}
