@@ -2,7 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const express = require('express');
 const { addonBuilder, getRouter } = require('stremio-addon-sdk');
-const { getWatchlist } = require('./scraper');
+const { getWatchlist, getPreview } = require('./scraper');
 
 const manifest = {
     id: 'org.stremio.letterboxd.watchlist',
@@ -43,6 +43,16 @@ builder.defineCatalogHandler(async (args) => {
 });
 
 const app = express();
+
+app.get('/api/preview/:username', async (req, res) => {
+    try {
+        const { username } = req.params;
+        const movies = await getPreview(username);
+        res.json({ movies, success: movies.length > 0 });
+    } catch (err) {
+        res.status(500).json({ movies: [], success: false });
+    }
+});
 
 // Important : bypass les headers pour les tunnels
 app.use((req, res, next) => {

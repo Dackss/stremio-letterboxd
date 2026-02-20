@@ -217,4 +217,51 @@ async function getWatchlist(username, sort = 'default') {
     }
 }
 
-module.exports = { getWatchlist };
+async function getPreview(username) {
+    try {
+        const url = `https://letterboxd.com/${username}/watchlist/`;
+        console.log(`[Preview] 🔍 Tentative 100% gratuite pour : ${username}`);
+
+        // 1. On tente uniquement la récupération directe
+        let $;
+        try {
+            $ = await fetchPageDirect(url);
+        } catch (err) {
+            // Si on est bloqué ou que le pseudo n'existe pas, on s'arrête là
+            console.log(`[Preview] 🛑 Échec (Bloqué ou 404). Aucun crédit utilisé.`);
+            return [];
+        }
+
+        const previewItems = [];
+        // On récupère les titres des 4 premiers films
+        $('.film-poster').slice(0, 4).each((i, el) => {
+            const img = $(el).find('img');
+            const title = img.attr('alt') || $(el).attr('data-film-name');
+            if (title) previewItems.push({ title });
+        });
+
+        if (previewItems.length === 0) return [];
+
+        console.log(`[Preview] 🖼️  Titres trouvés, récupération des affiches via Cinemeta...`);
+
+        // 2. On récupère les images via Cinemeta (toujours gratuit)
+        const moviesWithPosters = await Promise.all(
+            previewItems.map(async (item) => {
+                const meta = await getStremioMeta(item.title);
+                return {
+                    title: item.title,
+                    image: meta?.poster || 'https://s.ltrbxd.com/static/img/empty-poster-125-AiuBHVCI.png'
+                };
+            })
+        );
+
+        return moviesWithPosters;
+
+    } catch (e) {
+        console.error(`[Preview] Erreur : ${e.message}`);
+        return [];
+    }
+}
+
+// N'oublie pas de l'ajouter aux exports à la fin du fichier
+module.exports = { getWatchlist, getPreview };
