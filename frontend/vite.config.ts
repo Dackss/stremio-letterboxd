@@ -12,4 +12,7 @@ export default defineConfig({
       allow: ['..'],
     },
   },
+  optimizeDeps: {
+    include: ['lucide-react']
+  }
 })

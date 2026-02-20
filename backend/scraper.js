@@ -222,35 +222,46 @@ async function getPreview(username) {
         const url = `https://letterboxd.com/${username}/watchlist/`;
         console.log(`[Preview] 🔍 Tentative 100% gratuite pour : ${username}`);
 
-        // 1. On tente uniquement la récupération directe
         let $;
         try {
             $ = await fetchPageDirect(url);
         } catch (err) {
-            // Si on est bloqué ou que le pseudo n'existe pas, on s'arrête là
             console.log(`[Preview] 🛑 Échec (Bloqué ou 404). Aucun crédit utilisé.`);
             return [];
         }
 
         const previewItems = [];
-        // On récupère les titres des 4 premiers films
         $('.film-poster').slice(0, 4).each((i, el) => {
             const img = $(el).find('img');
             const title = img.attr('alt') || $(el).attr('data-film-name');
-            if (title) previewItems.push({ title });
+
+            // 🛠️ FIX RENFORCÉ : Cherche le slug sur la balise div, OU dans le href d'une balise <a> enfant
+            let slug = $(el).attr('data-film-slug') || $(el).attr('data-item-slug');
+            if (!slug) {
+                const linkAttr = $(el).find('a').attr('href');
+                if (linkAttr) slug = linkAttr;
+            }
+
+            if (slug) {
+                // Nettoie le slug pour éviter les "/film/..."
+                slug = slug.replace(/\/film\//g, '').replace(/\//g, '');
+            }
+
+            if (title) previewItems.push({ title, slug });
         });
 
         if (previewItems.length === 0) return [];
 
         console.log(`[Preview] 🖼️  Titres trouvés, récupération des affiches via Cinemeta...`);
 
-        // 2. On récupère les images via Cinemeta (toujours gratuit)
         const moviesWithPosters = await Promise.all(
             previewItems.map(async (item) => {
                 const meta = await getStremioMeta(item.title);
                 return {
                     title: item.title,
-                    image: meta?.poster || 'https://s.ltrbxd.com/static/img/empty-poster-125-AiuBHVCI.png'
+                    slug: item.slug,
+                    image: meta?.poster || 'https://s.ltrbxd.com/static/img/empty-poster-125-AiuBHVCI.png',
+                    rating: meta?.imdbRating || null
                 };
             })
         );
